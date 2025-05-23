@@ -2,7 +2,6 @@ import { useState, Dispatch, SetStateAction } from 'react'
 import { useTranslation, Trans } from 'react-i18next'
 import getMeta from '../../../../utils/meta'
 import LeaveModalForm, { LeaveModalFormProps } from './modal-form'
-import { ExposedSettings } from '../../../../../../types/exposed-settings'
 import OLButton from '@/features/ui/components/ol/ol-button'
 import {
   OLModalBody,
@@ -10,6 +9,8 @@ import {
   OLModalHeader,
   OLModalTitle,
 } from '@/features/ui/components/ol/ol-modal'
+
+const WRITEFULL_SUPPORT_EMAIL = 'support@writefull.com'
 
 type LeaveModalContentProps = {
   handleHide: () => void
@@ -23,8 +24,8 @@ function LeaveModalContentBlock({
   setIsFormValid,
 }: LeaveModalFormProps) {
   const { t } = useTranslation()
-  const { isOverleaf } = getMeta('ol-ExposedSettings') as ExposedSettings
-  const hasPassword = getMeta('ol-hasPassword') as boolean
+  const { isOverleaf } = getMeta('ol-ExposedSettings')
+  const hasPassword = getMeta('ol-hasPassword')
 
   if (isOverleaf && !hasPassword) {
     return (
@@ -37,11 +38,25 @@ function LeaveModalContentBlock({
   }
 
   return (
-    <LeaveModalForm
-      setInFlight={setInFlight}
-      isFormValid={isFormValid}
-      setIsFormValid={setIsFormValid}
-    />
+    <>
+      <LeaveModalForm
+        setInFlight={setInFlight}
+        isFormValid={isFormValid}
+        setIsFormValid={setIsFormValid}
+      />
+      <p>
+        <Trans
+          i18nKey="to_delete_your_writefull_account"
+          values={{ email: WRITEFULL_SUPPORT_EMAIL }}
+          shouldUnescape
+          tOptions={{ interpolation: { escapeValue: true } }}
+          components={{
+            // eslint-disable-next-line jsx-a11y/anchor-has-content
+            a: <a href={`mailto:${WRITEFULL_SUPPORT_EMAIL}`} />,
+          }}
+        />
+      </p>
+    </>
   )
 }
 

@@ -21,6 +21,7 @@ services:
       ELASTIC_SEARCH_DSN: es:9200
       REDIS_HOST: redis
       QUEUES_REDIS_HOST: redis
+      HISTORY_REDIS_HOST: redis
       ANALYTICS_QUEUES_REDIS_HOST: redis
       MONGO_HOST: mongo
       POSTGRES_HOST: postgres
@@ -31,7 +32,7 @@ services:
       redis:
         condition: service_healthy
     user: node
-    command: npm run test:acceptance:_run
+    command: npm run test:acceptance
 
 
   tar:

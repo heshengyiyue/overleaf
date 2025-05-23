@@ -1,31 +1,41 @@
-import { Form } from 'react-bootstrap-5'
-import { Checkbox as BS3Checkbox } from 'react-bootstrap'
-import BootstrapVersionSwitcher from '@/features/ui/components/bootstrap-5/bootstrap-version-switcher'
+import { Form, FormCheckProps } from 'react-bootstrap'
+import { MergeAndOverride } from '../../../../../../types/utils'
+import FormText from '../bootstrap-5/form/form-text'
 
-type OLFormCheckboxProps = React.ComponentProps<(typeof Form)['Check']> & {
-  bs3Props?: Record<string, unknown>
-}
+type OLFormCheckboxProps = MergeAndOverride<
+  FormCheckProps,
+  {
+    inputRef?: React.MutableRefObject<HTMLInputElement | null>
+  } & (
+    | { description: string; id: string }
+    | { description?: undefined; id?: string }
+  )
+>
 
 function OLFormCheckbox(props: OLFormCheckboxProps) {
-  const { bs3Props, ...rest } = props
+  const { inputRef, ...rest } = props
 
-  const bs3FormLabelProps: React.ComponentProps<typeof BS3Checkbox> = {
-    children: rest.label,
-    checked: rest.checked,
-    required: rest.required,
-    readOnly: rest.readOnly,
-    disabled: rest.disabled,
-    inline: rest.inline,
-    title: rest.title,
-    onChange: rest.onChange as (e: React.ChangeEvent<unknown>) => void,
-    ...bs3Props,
-  }
-
-  return (
-    <BootstrapVersionSwitcher
-      bs3={<BS3Checkbox {...bs3FormLabelProps} />}
-      bs5={<Form.Check {...rest} />}
+  return rest.type === 'radio' ? (
+    <Form.Check
+      ref={inputRef}
+      aria-describedby={rest.description ? `${rest.id}-description` : undefined}
+      {...rest}
+      label={
+        <>
+          {rest.label}
+          {rest.description && (
+            <FormText
+              id={`${rest.id}-description`}
+              className="form-check-label-description"
+            >
+              {rest.description}
+            </FormText>
+          )}
+        </>
+      }
     />
+  ) : (
+    <Form.Check ref={inputRef} {...rest} />
   )
 }
 

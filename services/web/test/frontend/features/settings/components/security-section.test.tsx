@@ -4,13 +4,8 @@ import { screen, render } from '@testing-library/react'
 import fetchMock from 'fetch-mock'
 
 describe('<SecuritySection />', function () {
-  beforeEach(function () {
-    window.metaAttributesCache = window.metaAttributesCache || new Map()
-  })
-
   afterEach(function () {
-    window.metaAttributesCache = new Map()
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   it('shows Group SSO rows in security section', async function () {

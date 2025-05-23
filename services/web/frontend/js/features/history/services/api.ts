@@ -8,7 +8,6 @@ import { FetchUpdatesResponse } from './types/update'
 import { Label } from './types/label'
 import { DocDiffResponse } from './types/doc'
 import { RestoreFileResponse } from './types/restore-file'
-import { RevertFileResponse } from './types/revert-file'
 
 const BATCH_SIZE = 10
 
@@ -49,10 +48,6 @@ export function deleteLabel(
   signal?: AbortSignal
 ) {
   return deleteJSON(`/project/${projectId}/labels/${labelId}`, { signal })
-}
-
-export function completeHistoryTutorial() {
-  return postJSON('/tutorial/react-history-buttons-tutorial/complete')
 }
 
 export function diffFiles(
@@ -96,15 +91,21 @@ export function restoreFile(projectId: string, selectedFile: FileRemoved) {
   })
 }
 
-export function revertFile(
+export function restoreFileToVersion(
   projectId: string,
   pathname: string,
   version: number
 ) {
-  return postJSON<RevertFileResponse>(`/project/${projectId}/revert_file`, {
+  return postJSON<RestoreFileResponse>(`/project/${projectId}/revert_file`, {
     body: {
       version,
       pathname,
     },
+  })
+}
+
+export function restoreProjectToVersion(projectId: string, version: number) {
+  return postJSON(`/project/${projectId}/revert-project`, {
+    body: { version },
   })
 }

@@ -18,7 +18,8 @@ import getMeta from '../../../../utils/meta'
 import { ReCaptcha2 } from '../../../../shared/components/recaptcha-2'
 import { useRecaptcha } from '../../../../shared/hooks/use-recaptcha'
 import OLCol from '@/features/ui/components/ol/ol-col'
-import { bsVersion } from '@/features/utils/bootstrap-5'
+import { ConfirmEmailForm } from '@/features/settings/components/emails/confirm-email-form'
+import RecaptchaConditions from '@/shared/components/recaptcha-conditions'
 
 function AddEmail() {
   const { t } = useTranslation()
@@ -26,6 +27,7 @@ function AddEmail() {
     () => window.location.hash === '#add-email'
   )
   const [newEmail, setNewEmail] = useState('')
+  const [confirmationStep, setConfirmationStep] = useState(false)
   const [newEmailMatchedDomain, setNewEmailMatchedDomain] =
     useState<DomainInfo | null>(null)
   const [countryCode, setCountryCode] = useState<CountryCode | null>(null)
@@ -42,7 +44,7 @@ function AddEmail() {
     getEmails,
   } = useUserEmailsContext()
 
-  const emailAddressLimit = getMeta('ol-emailAddressLimit', 10)
+  const emailAddressLimit = getMeta('ol-emailAddressLimit') || 10
   const { ref: recaptchaRef, getReCaptchaToken } = useRecaptcha()
 
   useEffect(() => {
@@ -90,7 +92,7 @@ function AddEmail() {
     runAsync(
       (async () => {
         const token = await getReCaptchaToken()
-        await postJSON('/user/emails', {
+        await postJSON('/user/emails/secondary', {
           body: {
             email: newEmail,
             ...knownUniversityData,
@@ -101,9 +103,26 @@ function AddEmail() {
       })()
     )
       .then(() => {
-        getEmails()
+        setConfirmationStep(true)
       })
       .catch(() => {})
+  }
+
+  if (confirmationStep) {
+    return (
+      <ConfirmEmailForm
+        confirmationEndpoint="/user/emails/confirm-secondary"
+        resendEndpoint="/user/emails/resend-secondary-confirmation"
+        flow="secondary"
+        email={newEmail}
+        onSuccessfulConfirmation={getEmails}
+        interstitial={false}
+        onCancel={() => {
+          setConfirmationStep(false)
+          setIsFormVisible(false)
+        }}
+      />
+    )
   }
 
   if (!isFormVisible) {
@@ -134,10 +153,7 @@ function AddEmail() {
 
   const InputComponent = (
     <>
-      <label
-        htmlFor="affiliations-email"
-        className={bsVersion({ bs5: 'visually-hidden', bs3: 'sr-only' })}
-      >
+      <label htmlFor="affiliations-email" className="visually-hidden">
         {t('email')}
       </label>
       <Input
@@ -146,12 +162,21 @@ function AddEmail() {
       />
     </>
   )
+  const recaptchaConditions = (
+    <OLCol>
+      <Cell>
+        <div className="affiliations-table-cell-tabbed">
+          <RecaptchaConditions />
+        </div>
+      </Cell>
+    </OLCol>
+  )
 
   if (!isValidEmail(newEmail)) {
     return (
       <form>
         <Layout isError={isError} error={error}>
-          <ReCaptcha2 page="addEmail" ref={recaptchaRef} />
+          <ReCaptcha2 page="addEmail" recaptchaRef={recaptchaRef} />
           <OLCol lg={8}>
             <Cell>
               {InputComponent}
@@ -161,15 +186,11 @@ function AddEmail() {
             </Cell>
           </OLCol>
           <OLCol lg={4}>
-            <Cell
-              className={bsVersion({
-                bs5: 'text-lg-end',
-                bs3: 'text-md-right',
-              })}
-            >
+            <Cell className="text-lg-end">
               <AddNewEmailBtn email={newEmail} disabled />
             </Cell>
           </OLCol>
+          {recaptchaConditions}
         </Layout>
       </form>
     )
@@ -181,7 +202,7 @@ function AddEmail() {
   return (
     <form>
       <Layout isError={isError} error={error}>
-        <ReCaptcha2 page="addEmail" ref={recaptchaRef} />
+        <ReCaptcha2 page="addEmail" recaptchaRef={recaptchaRef} />
         <OLCol lg={8}>
           <Cell>
             {InputComponent}
@@ -206,12 +227,7 @@ function AddEmail() {
         </OLCol>
         {!isSsoAvailableForDomain ? (
           <OLCol lg={4}>
-            <Cell
-              className={bsVersion({
-                bs5: 'text-lg-end',
-                bs3: 'text-md-right',
-              })}
-            >
+            <Cell className="text-lg-end">
               <AddNewEmailBtn
                 email={newEmail}
                 disabled={state.isLoading}
@@ -232,6 +248,7 @@ function AddEmail() {
             </Cell>
           </OLCol>
         )}
+        {recaptchaConditions}
       </Layout>
     </form>
   )

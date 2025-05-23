@@ -13,7 +13,8 @@ import ReconfirmationInfo from '../../../../../../frontend/js/features/settings/
 import { ssoUserData } from '../../fixtures/test-user-email-data'
 import { UserEmailData } from '../../../../../../types/user-email'
 import { UserEmailsProvider } from '../../../../../../frontend/js/features/settings/context/user-email-context'
-import * as useLocationModule from '../../../../../../frontend/js/shared/hooks/use-location'
+import { location } from '@/shared/components/location'
+import getMeta from '@/utils/meta'
 
 function renderReconfirmationInfo(data: UserEmailData) {
   return render(
@@ -24,25 +25,18 @@ function renderReconfirmationInfo(data: UserEmailData) {
 }
 
 describe('<ReconfirmationInfo/>', function () {
-  let assignStub: sinon.SinonStub
-
   beforeEach(function () {
-    window.metaAttributesCache = window.metaAttributesCache || new Map()
-    window.metaAttributesCache.set('ol-ExposedSettings', {
+    Object.assign(getMeta('ol-ExposedSettings'), {
       samlInitPath: '/saml',
     })
     fetchMock.get('/user/emails?ensureAffiliation=true', [])
-    assignStub = sinon.stub()
-    this.locationStub = sinon.stub(useLocationModule, 'useLocation').returns({
-      assign: assignStub,
-      replace: sinon.stub(),
-      reload: sinon.stub(),
-    })
+    this.locationWrapperSandbox = sinon.createSandbox()
+    this.locationWrapperStub = this.locationWrapperSandbox.stub(location)
   })
 
   afterEach(function () {
-    fetchMock.reset()
-    this.locationStub.restore()
+    fetchMock.removeRoutes().clearHistory()
+    this.locationWrapperSandbox.restore()
   })
 
   describe('reconfirmed via SAML', function () {
@@ -51,10 +45,6 @@ describe('<ReconfirmationInfo/>', function () {
         'ol-reconfirmedViaSAML',
         'sso-prof-saml-id'
       )
-    })
-
-    afterEach(function () {
-      window.metaAttributesCache = new Map()
     })
 
     it('show reconfirmed confirmation', function () {
@@ -69,7 +59,7 @@ describe('<ReconfirmationInfo/>', function () {
     let inReconfirmUserData: UserEmailData
 
     beforeEach(function () {
-      window.metaAttributesCache.set('ol-ExposedSettings', {
+      Object.assign(getMeta('ol-ExposedSettings'), {
         samlInitPath: '/saml',
       })
 
@@ -77,10 +67,6 @@ describe('<ReconfirmationInfo/>', function () {
       if (inReconfirmUserData.affiliation) {
         inReconfirmUserData.affiliation.inReconfirmNotificationPeriod = true
       }
-    })
-
-    afterEach(function () {
-      window.metaAttributesCache = new Map()
     })
 
     it('renders prompt', function () {
@@ -102,7 +88,7 @@ describe('<ReconfirmationInfo/>', function () {
 
     describe('SAML reconfirmations', function () {
       beforeEach(function () {
-        window.metaAttributesCache.set('ol-ExposedSettings', {
+        Object.assign(getMeta('ol-ExposedSettings'), {
           hasSamlFeature: true,
           samlInitPath: '/saml/init',
         })
@@ -111,7 +97,7 @@ describe('<ReconfirmationInfo/>', function () {
       it('redirects to SAML flow', async function () {
         renderReconfirmationInfo(inReconfirmUserData)
         const confirmButton = screen.getByRole('button', {
-          name: 'Confirm Affiliation',
+          name: 'Confirm affiliation',
         }) as HTMLButtonElement
 
         await waitFor(() => {
@@ -122,9 +108,9 @@ describe('<ReconfirmationInfo/>', function () {
         await waitFor(() => {
           expect(confirmButton.disabled).to.be.true
         })
-        sinon.assert.calledOnce(assignStub)
+        sinon.assert.calledOnce(this.locationWrapperStub.assign)
         sinon.assert.calledWithMatch(
-          assignStub,
+          this.locationWrapperStub.assign,
           '/saml/init?university_id=2&reconfirm=/user/settings'
         )
       })
@@ -132,7 +118,7 @@ describe('<ReconfirmationInfo/>', function () {
 
     describe('Email reconfirmations', function () {
       beforeEach(function () {
-        window.metaAttributesCache.set('ol-ExposedSettings', {
+        Object.assign(getMeta('ol-ExposedSettings'), {
           hasSamlFeature: false,
         })
         fetchMock.post('/user/emails/send-reconfirmation', 200)
@@ -141,7 +127,7 @@ describe('<ReconfirmationInfo/>', function () {
       it('sends and resends confirmation email', async function () {
         renderReconfirmationInfo(inReconfirmUserData)
         const confirmButton = (await screen.findByRole('button', {
-          name: 'Confirm Affiliation',
+          name: 'Confirm affiliation',
         })) as HTMLButtonElement
 
         await waitFor(() => {
@@ -152,13 +138,13 @@ describe('<ReconfirmationInfo/>', function () {
         await waitFor(() => {
           expect(confirmButton.disabled).to.be.true
         })
-        expect(fetchMock.called()).to.be.true
+        expect(fetchMock.callHistory.called()).to.be.true
 
         // the confirmation text should now be displayed
         await screen.findByText(/Please check your email inbox to confirm/)
 
         // try the resend button
-        fetchMock.resetHistory()
+        fetchMock.clearHistory()
         const resendButton = await screen.findByRole('button', {
           name: 'Resend confirmation email',
         })
@@ -167,8 +153,8 @@ describe('<ReconfirmationInfo/>', function () {
 
         // commented out as it's already gone by this point
         // await screen.findByText(/Sending/)
-        expect(fetchMock.called()).to.be.true
-        await waitForElementToBeRemoved(() => screen.getByText(/Sending/))
+        expect(fetchMock.callHistory.called()).to.be.true
+        await waitForElementToBeRemoved(() => screen.getByText('Sending…'))
         await screen.findByRole('button', {
           name: 'Resend confirmation email',
         })

@@ -4,7 +4,7 @@ describe('beta badge', function () {
   it('renders the url and tooltip text', function () {
     cy.mount(
       <BetaBadge
-        url="/foo"
+        link={{ href: '/foo' }}
         tooltip={{
           id: 'test-tooltip',
           text: 'This is a test',

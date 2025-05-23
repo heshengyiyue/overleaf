@@ -5,7 +5,6 @@ import {
   postJSON,
 } from '../../../infrastructure/fetch-json'
 import getMeta from '../../../utils/meta'
-import { ExposedSettings } from '../../../../../types/exposed-settings'
 import useAsync from '../../../shared/hooks/use-async'
 import { useUserContext } from '../../../shared/context/user-context'
 import OLButton from '@/features/ui/components/ol/ol-button'
@@ -13,19 +12,15 @@ import OLNotification from '@/features/ui/components/ol/ol-notification'
 import OLFormGroup from '@/features/ui/components/ol/ol-form-group'
 import OLFormLabel from '@/features/ui/components/ol/ol-form-label'
 import OLFormControl from '@/features/ui/components/ol/ol-form-control'
-import FormText from '@/features/ui/components/bootstrap-5/form/form-text'
+import OLFormText from '@/features/ui/components/ol/ol-form-text'
 
 function AccountInfoSection() {
   const { t } = useTranslation()
-  const { hasAffiliationsFeature } = getMeta(
-    'ol-ExposedSettings'
-  ) as ExposedSettings
+  const { hasAffiliationsFeature } = getMeta('ol-ExposedSettings')
   const isExternalAuthenticationSystemUsed = getMeta(
     'ol-isExternalAuthenticationSystemUsed'
-  ) as boolean
-  const shouldAllowEditingDetails = getMeta(
-    'ol-shouldAllowEditingDetails'
-  ) as boolean
+  )
+  const shouldAllowEditingDetails = getMeta('ol-shouldAllowEditingDetails')
   const {
     first_name: initialFirstName,
     last_name: initialLastName,
@@ -75,7 +70,7 @@ function AccountInfoSection() {
 
   return (
     <>
-      <h3>{t('update_account_info')}</h3>
+      <h3 id="update-account-info">{t('update_account_info')}</h3>
       <form id="account-info-form" onSubmit={handleSubmit}>
         {hasAffiliationsFeature ? null : (
           <ReadOrWriteFormGroup
@@ -93,6 +88,7 @@ function AccountInfoSection() {
           type="text"
           label={t('first_name')}
           value={firstName}
+          maxLength={255}
           handleChange={handleFirstNameChange}
           canEdit={canUpdateNames}
           required={false}
@@ -101,6 +97,7 @@ function AccountInfoSection() {
           id="last-name-input"
           type="text"
           label={t('last_name')}
+          maxLength={255}
           value={lastName}
           handleChange={handleLastNameChange}
           canEdit={canUpdateNames}
@@ -123,18 +120,19 @@ function AccountInfoSection() {
           </OLFormGroup>
         ) : null}
         {canUpdateEmail || canUpdateNames ? (
-          <OLButton
-            type="submit"
-            variant="primary"
-            form="account-info-form"
-            disabled={!isFormValid}
-            isLoading={isLoading}
-            bs3Props={{
-              loading: isLoading ? `${t('saving')}…` : t('update'),
-            }}
-          >
-            {t('update')}
-          </OLButton>
+          <OLFormGroup>
+            <OLButton
+              type="submit"
+              variant="primary"
+              form="account-info-form"
+              disabled={!isFormValid}
+              isLoading={isLoading}
+              loadingLabel={t('saving') + '…'}
+              aria-labelledby={isLoading ? undefined : 'update-account-info'}
+            >
+              {t('update')}
+            </OLButton>
+          </OLFormGroup>
         ) : null}
       </form>
     </>
@@ -148,6 +146,7 @@ type ReadOrWriteFormGroupProps = {
   value?: string
   handleChange: (event: any) => void
   canEdit: boolean
+  maxLength?: number
   required: boolean
 }
 
@@ -158,6 +157,7 @@ function ReadOrWriteFormGroup({
   value,
   handleChange,
   canEdit,
+  maxLength,
   required,
 }: ReadOrWriteFormGroupProps) {
   const [validationMessage, setValidationMessage] = useState('')
@@ -189,11 +189,14 @@ function ReadOrWriteFormGroup({
         type={type}
         required={required}
         value={value}
+        maxLength={maxLength}
         data-ol-dirty={!!validationMessage}
         onChange={handleChangeAndValidity}
         onInvalid={handleInvalid}
       />
-      {validationMessage && <FormText isError>{validationMessage}</FormText>}
+      {validationMessage && (
+        <OLFormText type="error">{validationMessage}</OLFormText>
+      )}
     </OLFormGroup>
   )
 }

@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import {
   createFileModalDecorator,
   mockCreateFileModalFetch,
@@ -7,9 +6,15 @@ import FileTreeModalCreateFile from '../../../js/features/file-tree/components/m
 import useFetchMock from '../../hooks/use-fetch-mock'
 import { ScopeDecorator } from '../../decorators/scope'
 import { useScope } from '../../hooks/use-scope'
+import getMeta from '@/utils/meta'
 
 export const MinimalFeatures = args => {
   useFetchMock(mockCreateFileModalFetch)
+  Object.assign(getMeta('ol-ExposedSettings'), {
+    hasLinkUrlFeature: false,
+    hasLinkedProjectFileFeature: false,
+    hasLinkedProjectOutputFileFeature: false,
+  })
 
   return <FileTreeModalCreateFile {...args} />
 }
@@ -18,14 +23,7 @@ MinimalFeatures.decorators = [createFileModalDecorator()]
 export const WithExtraFeatures = args => {
   useFetchMock(mockCreateFileModalFetch)
 
-  useEffect(() => {
-    const originalValue = window.ExposedSettings.hasLinkUrlFeature
-    window.ExposedSettings.hasLinkUrlFeature = true
-
-    return () => {
-      window.ExposedSettings.hasLinkUrlFeature = originalValue
-    }
-  }, [])
+  getMeta('ol-ExposedSettings').hasLinkUrlFeature = true
 
   return <FileTreeModalCreateFile {...args} />
 }
@@ -39,19 +37,10 @@ export const ErrorImportingFileFromExternalURL = args => {
   useFetchMock(fetchMock => {
     mockCreateFileModalFetch(fetchMock)
 
-    fetchMock.post('express:/project/:projectId/linked_file', 500, {
-      overwriteRoutes: true,
-    })
+    fetchMock.post('express:/project/:projectId/linked_file', 500)
   })
 
-  useEffect(() => {
-    const originalValue = window.ExposedSettings.hasLinkUrlFeature
-    window.ExposedSettings.hasLinkUrlFeature = true
-
-    return () => {
-      window.ExposedSettings.hasLinkUrlFeature = originalValue
-    }
-  }, [])
+  getMeta('ol-ExposedSettings').hasLinkUrlFeature = true
 
   return <FileTreeModalCreateFile {...args} />
 }
@@ -61,9 +50,7 @@ export const ErrorImportingFileFromReferenceProvider = args => {
   useFetchMock(fetchMock => {
     mockCreateFileModalFetch(fetchMock)
 
-    fetchMock.post('express:/project/:projectId/linked_file', 500, {
-      overwriteRoutes: true,
-    })
+    fetchMock.post('express:/project/:projectId/linked_file', 500)
   })
 
   return <FileTreeModalCreateFile {...args} />

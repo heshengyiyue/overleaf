@@ -10,7 +10,13 @@ const { DeletedSubscription } = require('../../models/DeletedSubscription')
 const logger = require('@overleaf/logger')
 const Features = require('../../infrastructure/Features')
 const UserAuditLogHandler = require('../User/UserAuditLogHandler')
+const AccountMappingHelper = require('../Analytics/AccountMappingHelper')
 const { SSOConfig } = require('../../models/SSOConfig')
+
+/**
+ * @typedef {import('../../../../types/subscription/dashboard/subscription').Subscription} Subscription
+ * @typedef {import('../../../../types/subscription/dashboard/subscription').PaymentProvider} PaymentProvider
+ */
 
 /**
  * Change the admin of the given subscription.
@@ -50,7 +56,7 @@ async function syncSubscription(
   let subscription =
     await SubscriptionLocator.promises.getUsersSubscription(adminUserId)
   if (subscription == null) {
-    subscription = await _createNewSubscription(adminUserId)
+    subscription = await createNewSubscription(adminUserId)
   }
   await updateSubscriptionFromRecurly(
     recurlySubscription,
@@ -159,7 +165,7 @@ async function deleteSubscription(subscription, deleterData) {
   await Subscription.deleteOne({ _id: subscription._id }).exec()
 
   // 4. refresh users features
-  await _scheduleRefreshFeatures(subscription)
+  await scheduleRefreshFeatures(subscription)
 }
 
 async function restoreSubscription(subscriptionId) {
@@ -200,7 +206,11 @@ async function refreshUsersFeatures(subscription) {
   }
 }
 
-async function _scheduleRefreshFeatures(subscription) {
+/**
+ *
+ * @param {Subscription} subscription
+ */
+async function scheduleRefreshFeatures(subscription) {
   const userIds = [subscription.admin_id].concat(subscription.member_ids || [])
   for (const userId of userIds) {
     await FeaturesUpdater.promises.scheduleRefreshFeatures(
@@ -225,7 +235,13 @@ async function createDeletedSubscription(subscription, deleterData) {
   await DeletedSubscription.findOneAndUpdate(filter, data, options).exec()
 }
 
-async function _createNewSubscription(adminUserId) {
+/**
+ * Creates a new subscription for the given admin user.
+ *
+ * @param {string} adminUserId
+ * @returns {Promise<Subscription>}
+ */
+async function createNewSubscription(adminUserId) {
   const subscription = new Subscription({
     admin_id: adminUserId,
     manager_ids: [adminUserId],
@@ -241,7 +257,7 @@ async function _deleteAndReplaceSubscriptionFromRecurly(
 ) {
   const adminUserId = subscription.admin_id
   await deleteSubscription(subscription, requesterData)
-  const newSubscription = await _createNewSubscription(adminUserId)
+  const newSubscription = await createNewSubscription(adminUserId)
   await updateSubscriptionFromRecurly(
     recurlySubscription,
     newSubscription,
@@ -305,8 +321,17 @@ async function updateSubscriptionFromRecurly(
     return
   }
 
+  const addOns = recurlySubscription?.subscription_add_ons?.map(addOn => {
+    return {
+      addOnCode: addOn.add_on_code,
+      quantity: addOn.quantity,
+      unitAmountInCents: addOn.unit_amount_in_cents,
+    }
+  })
+
   subscription.recurlySubscription_id = recurlySubscription.uuid
   subscription.planCode = updatedPlanCode
+  subscription.addOns = addOns || []
   subscription.recurlyStatus = {
     state: recurlySubscription.state,
     trialStartedAt: recurlySubscription.trial_started_at,
@@ -336,7 +361,17 @@ async function updateSubscriptionFromRecurly(
     }
   }
   await subscription.save()
-  await _scheduleRefreshFeatures(subscription)
+
+  const accountMapping =
+    AccountMappingHelper.generateSubscriptionToRecurlyMapping(
+      subscription._id,
+      subscription.recurlySubscription_id
+    )
+  if (accountMapping) {
+    AnalyticsManager.registerAccountMapping(accountMapping)
+  }
+
+  await scheduleRefreshFeatures(subscription)
 }
 
 async function _sendUserGroupPlanCodeUserProperty(userId) {
@@ -408,6 +443,7 @@ async function _sendSubscriptionEventForAllMembers(subscriptionId, event) {
 module.exports = {
   updateAdmin: callbackify(updateAdmin),
   syncSubscription: callbackify(syncSubscription),
+  createNewSubscription: callbackify(createNewSubscription),
   deleteSubscription: callbackify(deleteSubscription),
   createDeletedSubscription: callbackify(createDeletedSubscription),
   addUserToGroup: callbackify(addUserToGroup),
@@ -417,9 +453,11 @@ module.exports = {
   deleteWithV1Id: callbackify(deleteWithV1Id),
   restoreSubscription: callbackify(restoreSubscription),
   updateSubscriptionFromRecurly: callbackify(updateSubscriptionFromRecurly),
+  scheduleRefreshFeatures: callbackify(scheduleRefreshFeatures),
   promises: {
     updateAdmin,
     syncSubscription,
+    createNewSubscription,
     addUserToGroup,
     refreshUsersFeatures,
     removeUserFromGroup,
@@ -429,5 +467,6 @@ module.exports = {
     deleteWithV1Id,
     restoreSubscription,
     updateSubscriptionFromRecurly,
+    scheduleRefreshFeatures,
   },
 }

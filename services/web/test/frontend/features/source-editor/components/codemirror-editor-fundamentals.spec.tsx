@@ -10,7 +10,6 @@ test
   beforeEach(function () {
     window.metaAttributesCache.set('ol-preventCompileOnLoad', true)
     cy.interceptEvents()
-    cy.interceptSpelling()
 
     const scope = mockScope(content)
 

@@ -1,11 +1,12 @@
-extends ../layout-marketing
+extends ../layout-react
 
 block entrypointVar
 	- entrypoint = 'pages/project-list'
 
 block vars
-	- var suppressNavContentLinks = true
-	- bootstrap5PageStatus = 'queryStringOnly' // One of 'disabled', 'enabled', and 'queryStringOnly'
+	- const suppressNavContentLinks = true
+	- const suppressNavbar = true
+	- const suppressFooter = true
 
 block append meta
 	meta(name="ol-usersBestSubscription" data-type="json" content=usersBestSubscription)
@@ -27,7 +28,6 @@ block append meta
 		}))
 	meta(name="ol-currentUrl" data-type="string" content=currentUrl)
 	meta(name="ol-showGroupsAndEnterpriseBanner" data-type="boolean" content=showGroupsAndEnterpriseBanner)
-	meta(name="ol-showWritefullPromoBanner" data-type="boolean" content=showWritefullPromoBanner)
 	meta(name="ol-groupsAndEnterpriseBannerVariant" data-type="string" content=groupsAndEnterpriseBannerVariant)
 	meta(name="ol-showInrGeoBanner" data-type="boolean" content=showInrGeoBanner)
 	meta(name="ol-showBrlGeoBanner" data-type="boolean" content=showBrlGeoBanner)
@@ -35,9 +35,9 @@ block append meta
 	meta(name="ol-showLATAMBanner" data-type="boolean" content=showLATAMBanner)
 	meta(name="ol-groupSubscriptionsPendingEnrollment" data-type="json" content=groupSubscriptionsPendingEnrollment)
 	meta(name="ol-hasIndividualRecurlySubscription" data-type="boolean" content=hasIndividualRecurlySubscription)
-	meta(name="ol-newNotificationStyle" data-type="boolean" content=newNotificationStyle)
 	meta(name="ol-groupSsoSetupSuccess" data-type="boolean" content=groupSsoSetupSuccess)
+	meta(name="ol-showUSGovBanner" data-type="boolean" content=showUSGovBanner)
+	meta(name="ol-usGovBannerVariant" data-type="string" content=usGovBannerVariant)
 
 block content
-	main.content.content-alt.project-list-react#main-content
-		#project-list-root
+	#project-list-root

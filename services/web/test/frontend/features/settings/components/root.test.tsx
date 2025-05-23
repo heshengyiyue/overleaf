@@ -1,17 +1,17 @@
 import { expect } from 'chai'
 import sinon from 'sinon'
 import { screen, render, waitFor } from '@testing-library/react'
-import * as eventTracking from '../../../../../frontend/js/infrastructure/event-tracking'
+import * as eventTracking from '@/infrastructure/event-tracking'
 import SettingsPageRoot from '../../../../../frontend/js/features/settings/components/root'
+import getMeta from '@/utils/meta'
 
 describe('<SettingsPageRoot />', function () {
   let sendMBSpy: sinon.SinonSpy
   beforeEach(function () {
-    window.metaAttributesCache = new Map()
     window.metaAttributesCache.set('ol-usersEmail', 'foo@bar.com')
-    window.metaAttributesCache.set('ol-ExposedSettings', { isOverleaf: true })
+    Object.assign(getMeta('ol-ExposedSettings'), { isOverleaf: true })
     window.metaAttributesCache.set('ol-hasPassword', true)
-    window.metaAttributesCache.set('ol-ExposedSettings', {
+    Object.assign(getMeta('ol-ExposedSettings'), {
       hasAffiliationsFeature: true,
       isOverleaf: true,
     })
@@ -29,7 +29,6 @@ describe('<SettingsPageRoot />', function () {
   })
 
   afterEach(function () {
-    window.metaAttributesCache = new Map()
     sendMBSpy.restore()
   })
 
@@ -37,11 +36,11 @@ describe('<SettingsPageRoot />', function () {
     render(<SettingsPageRoot />)
 
     await waitFor(() => {
-      screen.getByText('Account Settings')
+      screen.getByText('Account settings')
     })
-    screen.getByText('Emails and Affiliations')
-    screen.getByText('Update Account Info')
-    screen.getByText('Change Password')
+    screen.getByText('Emails and affiliations')
+    screen.getByText('Update account info')
+    screen.getByText('Change password')
     screen.getByText('Integrations')
     screen.getByText('Overleaf Beta Program')
     screen.getByText('Sessions')
@@ -52,18 +51,18 @@ describe('<SettingsPageRoot />', function () {
   })
 
   it('displays page for non-Overleaf', async function () {
-    window.metaAttributesCache.set('ol-ExposedSettings', {
+    Object.assign(getMeta('ol-ExposedSettings'), {
       hasAffiliationsFeature: false,
       isOverleaf: false,
     })
     render(<SettingsPageRoot />)
 
     await waitFor(() => {
-      screen.getByText('Account Settings')
+      screen.getByText('Account settings')
     })
-    expect(screen.queryByText('Emails and Affiliations')).to.not.exist
-    screen.getByText('Update Account Info')
-    screen.getByText('Change Password')
+    expect(screen.queryByText('Emails and affiliations')).to.not.exist
+    screen.getByText('Update account info')
+    screen.getByText('Change password')
     screen.getByText('Integrations')
     expect(screen.queryByText('Overleaf Beta Program')).to.not.exist
     screen.getByText('Sessions')

@@ -1,5 +1,8 @@
 const OError = require('@overleaf/o-error')
-const request = require('request')
+const {
+  fetchStringWithResponse,
+  RequestFailedError,
+} = require('@overleaf/fetch-utils')
 const Settings = require('@overleaf/settings')
 const xml2js = require('xml2js')
 const logger = require('@overleaf/logger')
@@ -7,6 +10,10 @@ const Errors = require('../Errors/Errors')
 const SubscriptionErrors = require('./Errors')
 const { callbackify } = require('@overleaf/promise-utils')
 
+/**
+ * @param accountId
+ * @param newEmail
+ */
 async function updateAccountEmailAddress(accountId, newEmail) {
   const data = {
     email: newEmail,
@@ -51,7 +58,7 @@ const promises = {
         )
         throw error
       }
-      if (response.statusCode === 404) {
+      if (response.status === 404) {
         // actually not an error in this case, just no existing account
         logger.debug(
           { userId: user._id },
@@ -234,6 +241,9 @@ const promises = {
           account_code: user._id,
         },
       }
+      if (subscriptionDetails.subscription_add_ons) {
+        data.subscription_add_ons = subscriptionDetails.subscription_add_ons
+      }
       const customFields =
         getCustomFieldsFromSubscriptionDetails(subscriptionDetails)
       if (customFields) {
@@ -336,6 +346,10 @@ const promises = {
       data.account.billing_info.three_d_secure_action_result_token_id =
         recurlyTokenIds.threeDSecureActionResult
     }
+    if (subscriptionDetails.subscription_add_ons) {
+      data.subscription_add_ons = subscriptionDetails.subscription_add_ons
+    }
+
     const customFields =
       getCustomFieldsFromSubscriptionDetails(subscriptionDetails)
     if (customFields) {
@@ -355,7 +369,7 @@ const promises = {
       expect422: true,
     })
 
-    if (response.statusCode === 422) {
+    if (response.status === 422) {
       return await RecurlyWrapper.promises._handle422Response(body)
     } else {
       return await RecurlyWrapper.promises._parseSubscriptionXml(body)
@@ -378,9 +392,17 @@ const promises = {
    * @param options - the options to pass to the request library
    * @returns {Promise<{ response: unknown, body: string}>}
    */
-  apiRequest(options) {
-    options.url = RecurlyWrapper.apiUrl + '/' + options.url
-    options.headers = {
+  async apiRequest({ expect404, expect422, url, qs, ...fetchOptions }) {
+    const fetchUrl = new URL(RecurlyWrapper.apiUrl)
+    fetchUrl.pathname =
+      fetchUrl.pathname !== '/' ? `${fetchUrl.pathname}/${url}` : url
+
+    if (qs) {
+      for (const [key, value] of Object.entries(qs)) {
+        fetchUrl.searchParams.set(key, value)
+      }
+    }
+    fetchOptions.headers = {
       Authorization: `Basic ${Buffer.from(
         Settings.apis.recurly.apiKey
       ).toString('base64')}`,
@@ -388,40 +410,38 @@ const promises = {
       'Content-Type': 'application/xml; charset=utf-8',
       'X-Api-Version': Settings.apis.recurly.apiVersion,
     }
-    const { expect404, expect422 } = options
-    delete options.expect404
-    delete options.expect422
-    return new Promise((resolve, reject) => {
-      request(options, function (error, response, body) {
-        if (
-          !error &&
-          response.statusCode !== 200 &&
-          response.statusCode !== 201 &&
-          response.statusCode !== 204 &&
-          (response.statusCode !== 404 || !expect404) &&
-          (response.statusCode !== 422 || !expect422)
-        ) {
-          if (options.headers.Authorization) {
-            options.headers.Authorization = 'REDACTED'
-          }
-          logger.warn(
-            {
-              err: error,
-              body,
-              options,
-              statusCode: response ? response.statusCode : undefined,
-            },
-            'error returned from recurly'
-          )
-          error = new OError(
-            `Recurly API returned with status code: ${response.statusCode}`,
-            { statusCode: response.statusCode }
-          )
-          reject(error)
+
+    try {
+      return await fetchStringWithResponse(fetchUrl, fetchOptions)
+    } catch (error) {
+      if (error instanceof RequestFailedError) {
+        if (error.response.status === 404 && expect404) {
+          return { response: error.response, body: null }
+        } else if (error.response.status === 422 && expect422) {
+          return { response: error.response, body: error.body }
         }
-        resolve({ response, body })
-      })
-    })
+
+        if (fetchOptions.headers.Authorization) {
+          fetchOptions.headers.Authorization = 'REDACTED'
+        }
+        logger.warn(
+          {
+            err: error,
+            body: error.body,
+            options: fetchOptions,
+            url: fetchUrl.href,
+            statusCode: error.response?.status,
+          },
+          'error returned from recurly'
+        )
+        throw new OError(
+          `Recurly API returned with status code: ${error.response.status}`,
+          { statusCode: error.response.status }
+        )
+      } else {
+        throw error
+      }
+    }
   },
 
   async getSubscriptions(accountId) {
@@ -527,27 +547,6 @@ const promises = {
 
   updateAccountEmailAddress,
 
-  async getAccountActiveCoupons(accountId) {
-    const { body } = await RecurlyWrapper.promises.apiRequest({
-      url: `accounts/${accountId}/redemptions`,
-    })
-
-    const redemptions = await RecurlyWrapper.promises._parseRedemptionsXml(body)
-
-    const activeRedemptions = redemptions.filter(
-      redemption => redemption.state === 'active'
-    )
-    const couponCodes = activeRedemptions.map(
-      redemption => redemption.coupon_code
-    )
-
-    return await Promise.all(
-      couponCodes.map(couponCode =>
-        RecurlyWrapper.promises.getCoupon(couponCode)
-      )
-    )
-  },
-
   async getCoupon(couponCode) {
     const opts = { url: `coupons/${couponCode}` }
     const { body } = await RecurlyWrapper.promises.apiRequest(opts)
@@ -563,7 +562,8 @@ const promises = {
 
   async getAccountPastDueInvoices(accountId) {
     const { body } = await RecurlyWrapper.promises.apiRequest({
-      url: `accounts/${accountId}/invoices?state=past_due`,
+      url: `accounts/${accountId}/invoices`,
+      qs: { state: 'past_due' },
     })
     return await RecurlyWrapper.promises._parseInvoicesXml(body)
   },
@@ -571,7 +571,7 @@ const promises = {
   async attemptInvoiceCollection(invoiceId) {
     return await RecurlyWrapper.promises.apiRequest({
       url: `invoices/${invoiceId}/collect`,
-      method: 'put',
+      method: 'PUT',
     })
   },
 
@@ -593,13 +593,13 @@ const promises = {
 
     const { body } = await RecurlyWrapper.promises.apiRequest({
       url: `subscriptions/${subscriptionId}`,
-      method: 'put',
+      method: 'PUT',
       body: requestBody,
     })
     return await RecurlyWrapper.promises._parseSubscriptionXml(body)
   },
 
-  async createFixedAmmountCoupon(
+  async createFixedAmountCoupon(
     couponCode,
     name,
     currencyCode,
@@ -631,7 +631,7 @@ const promises = {
     try {
       await RecurlyWrapper.promises.apiRequest({
         url: 'coupons',
-        method: 'post',
+        method: 'POST',
         body: requestBody,
       })
     } catch (error) {
@@ -669,7 +669,7 @@ const promises = {
     try {
       await RecurlyWrapper.promises.apiRequest({
         url: `coupons/${couponCode}/redeem`,
-        method: 'post',
+        method: 'POST',
         body: requestBody,
       })
     } catch (error) {
@@ -693,13 +693,14 @@ const promises = {
     )
     try {
       await RecurlyWrapper.promises.apiRequest({
-        url: `/subscriptions/${subscriptionId}/postpone?next_bill_date=${nextRenewalDate}&bulk=false`,
-        method: 'put',
+        url: `subscriptions/${subscriptionId}/postpone`,
+        qs: { bulk: false, next_bill_date: nextRenewalDate },
+        method: 'PUT',
       })
     } catch (error) {
       logger.warn(
         { err: error, subscriptionId, daysUntilExpire },
-        'error exending trial'
+        'error extending trial'
       )
       throw error
     }
@@ -713,7 +714,7 @@ const promises = {
       },
       expect404: true,
     })
-    if (response.statusCode === 404) {
+    if (response.status === 404) {
       return []
     } else {
       return await RecurlyWrapper.promises._parseSubscriptionsXml(body)
@@ -805,6 +806,9 @@ const promises = {
     }
   },
 
+  /**
+   * @param xml
+   */
   _parseXml(xml) {
     function convertDataTypes(data) {
       let key, value
@@ -878,8 +882,7 @@ const RecurlyWrapper = {
   apiUrl: Settings.apis.recurly.url || 'https://api.recurly.com/v2',
   _buildXml,
   _parseXml: callbackify(promises._parseXml),
-  createFixedAmmountCoupon: callbackify(promises.createFixedAmmountCoupon),
-  getAccountActiveCoupons: callbackify(promises.getAccountActiveCoupons),
+  createFixedAmountCoupon: callbackify(promises.createFixedAmountCoupon),
   getBillingInfo: callbackify(promises.getBillingInfo),
   getPaginatedEndpoint: callbackify(promises.getPaginatedEndpoint),
   getSubscription: callbackify(promises.getSubscription),

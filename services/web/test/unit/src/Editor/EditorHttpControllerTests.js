@@ -2,7 +2,7 @@
 const SandboxedModule = require('sandboxed-module')
 const sinon = require('sinon')
 const { expect } = require('chai')
-const { ObjectId } = require('mongodb')
+const { ObjectId } = require('mongodb-legacy')
 const Errors = require('../../../../app/src/Features/Errors/Errors')
 const MockRequest = require('../helpers/MockRequest')
 const MockResponse = require('../helpers/MockResponse')
@@ -67,7 +67,7 @@ describe('EditorHttpController', function () {
         userIsTokenMember: sinon.stub().resolves(false),
       },
     }
-    this.CollaboratorsInviteHandler = {
+    this.CollaboratorsInviteGetter = {
       promises: {
         getAllInvites: sinon.stub().resolves([
           {
@@ -131,9 +131,7 @@ describe('EditorHttpController', function () {
     }
     this.SplitTestHandler = {
       promises: {
-        getAssignmentForMongoUser: sinon
-          .stub()
-          .resolves({ variant: 'default' }),
+        getAssignmentForUser: sinon.stub().resolves({ variant: 'default' }),
       },
     }
     this.UserGetter = { promises: { getUser: sinon.stub().resolves(null, {}) } }
@@ -147,8 +145,8 @@ describe('EditorHttpController', function () {
         '@overleaf/metrics': this.Metrics,
         '../Collaborators/CollaboratorsGetter': this.CollaboratorsGetter,
         '../Collaborators/CollaboratorsHandler': this.CollaboratorsHandler,
-        '../Collaborators/CollaboratorsInviteHandler':
-          this.CollaboratorsInviteHandler,
+        '../Collaborators/CollaboratorsInviteGetter':
+          this.CollaboratorsInviteGetter,
         '../TokenAccess/TokenAccessHandler': this.TokenAccessHandler,
         '../Authentication/SessionManager': this.SessionManager,
         '../../infrastructure/FileWriter': this.FileWriter,

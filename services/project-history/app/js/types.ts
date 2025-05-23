@@ -1,4 +1,9 @@
 import { HistoryRanges } from '../../../document-updater/app/js/types'
+import {
+  LinkedFileData,
+  RawEditOperation,
+  RawOrigin,
+} from 'overleaf-editor-core/lib/types'
 
 export type Update =
   | TextUpdate
@@ -7,8 +12,15 @@ export type Update =
   | RenameUpdate
   | DeleteCommentUpdate
   | SetCommentStateUpdate
+  | SetFileMetadataOperation
   | ResyncProjectStructureUpdate
   | ResyncDocContentUpdate
+
+export type ProjectStructureUpdate =
+  | AddDocUpdate
+  | AddFileUpdate
+  | RenameUpdate
+  | SetFileMetadataOperation
 
 export type UpdateMeta = {
   user_id: string
@@ -27,7 +39,17 @@ export type TextUpdate = {
   meta: UpdateMeta & {
     pathname: string
     doc_length: number
+    doc_hash?: string
     history_doc_length?: number
+  }
+}
+
+export type HistoryOTEditOperationUpdate = {
+  doc: string
+  op: RawEditOperation[]
+  v: number
+  meta: UpdateMeta & {
+    pathname: string
   }
 }
 
@@ -36,6 +58,12 @@ export type SetCommentStateUpdate = {
   commentId: string
   resolved: boolean
   meta: UpdateMeta
+}
+
+export type SetFileMetadataOperation = {
+  pathname: string
+  meta: UpdateMeta
+  metadata: LinkedFileData | object
 }
 
 export type DeleteCommentUpdate = {
@@ -61,6 +89,9 @@ export type AddFileUpdate = ProjectUpdateBase & {
   pathname: string
   file: string
   url: string
+  hash: string
+  createdBlob?: boolean
+  metadata?: LinkedFileData
 }
 
 export type RenameUpdate = ProjectUpdateBase & {
@@ -77,6 +108,9 @@ export type ResyncProjectStructureUpdate = {
   meta: {
     ts: string
   }
+  // optional fields for resyncProjectStructureOnly=true
+  resyncProjectStructureOnly?: boolean
+  _raw: string
 }
 
 export type ResyncDocContentUpdate = {
@@ -135,16 +169,14 @@ export type CommentOp = {
   resolved?: boolean
 }
 
-export type UpdateWithBlob = {
-  update: Update
-  blobHashes: {
-    file: string
-    ranges?: string
-  }
-}
-
-export type RawOrigin = {
-  kind: string
+export type UpdateWithBlob<T extends Update = Update> = {
+  update: T
+  blobHashes: T extends AddDocUpdate | AddFileUpdate
+    ? {
+        file: string
+        ranges?: string
+      }
+    : never
 }
 
 export type TrackingProps = {
@@ -195,8 +227,11 @@ export type Doc = {
 
 export type File = {
   file: string
-  url: string
+  url?: string
   path: string
+  _hash?: string
+  createdBlob?: boolean
+  metadata?: LinkedFileData
 }
 
 export type Entity = Doc | File

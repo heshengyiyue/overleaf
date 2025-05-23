@@ -1,12 +1,13 @@
 'use strict'
 
 const _ = require('lodash')
-const Path = require('path')
-const Stream = require('stream')
+const Path = require('node:path')
+const Stream = require('node:stream')
 const HTTPStatus = require('http-status')
-const fs = require('fs')
-const { promisify } = require('util')
+const fs = require('node:fs')
+const { promisify } = require('node:util')
 const config = require('config')
+const OError = require('@overleaf/o-error')
 
 const logger = require('@overleaf/logger')
 const { Chunk, ChunkResponse, Blob } = require('overleaf-editor-core')
@@ -50,6 +51,15 @@ async function getLatestContent(req, res, next) {
   res.json(snapshot.toRaw())
 }
 
+async function getContentAtVersion(req, res, next) {
+  const projectId = req.swagger.params.project_id.value
+  const version = req.swagger.params.version.value
+  const blobStore = new BlobStore(projectId)
+  const snapshot = await getSnapshotAtVersion(projectId, version)
+  await snapshot.loadFiles('eager', blobStore)
+  res.json(snapshot.toRaw())
+}
+
 async function getLatestHashedContent(req, res, next) {
   const projectId = req.swagger.params.project_id.value
   const blobStore = new HashCheckBlobStore(new BlobStore(projectId))
@@ -67,6 +77,26 @@ async function getLatestHistory(req, res, next) {
     const chunk = await chunkStore.loadLatest(projectId)
     const chunkResponse = new ChunkResponse(chunk)
     res.json(chunkResponse.toRaw())
+  } catch (err) {
+    if (err instanceof Chunk.NotFoundError) {
+      render.notFound(res)
+    } else {
+      throw err
+    }
+  }
+}
+
+async function getLatestHistoryRaw(req, res, next) {
+  const projectId = req.swagger.params.project_id.value
+  const readOnly = req.swagger.params.readOnly.value
+  try {
+    const { startVersion, endVersion, endTimestamp } =
+      await chunkStore.getLatestChunkMetadata(projectId, { readOnly })
+    res.json({
+      startVersion,
+      endVersion,
+      endTimestamp,
+    })
   } catch (err) {
     if (err instanceof Chunk.NotFoundError) {
       render.notFound(res)
@@ -106,6 +136,43 @@ async function getHistoryBefore(req, res, next) {
       throw err
     }
   }
+}
+
+/**
+ * Get all changes since the beginning of history or since a given version
+ */
+async function getChanges(req, res, next) {
+  const projectId = req.swagger.params.project_id.value
+  const since = req.swagger.params.since.value ?? 0
+
+  if (since < 0) {
+    // Negative values would cause an infinite loop
+    return res.status(400).json({
+      error: `Version out of bounds: ${since}`,
+    })
+  }
+
+  let chunk
+  try {
+    chunk = await chunkStore.loadAtVersion(projectId, since, {
+      preferNewer: true,
+    })
+  } catch (err) {
+    if (err instanceof Chunk.VersionNotFoundError) {
+      return res.status(400).json({
+        error: `Version out of bounds: ${since}`,
+      })
+    }
+    throw err
+  }
+
+  const latestChunkMetadata = await chunkStore.getLatestChunkMetadata(projectId)
+
+  // Extract the relevant changes from the chunk that contains the start version
+  const changes = chunk.getChanges().slice(since - chunk.getStartVersion())
+  const hasMore = latestChunkMetadata.endVersion > chunk.getEndVersion()
+
+  res.json({ changes: changes.map(change => change.toRaw()), hasMore })
 }
 
 async function getZip(req, res, next) {
@@ -184,33 +251,108 @@ async function createProjectBlob(req, res, next) {
     }
 
     const blobStore = new BlobStore(projectId)
-    await blobStore.putFile(tmpPath)
+    const newBlob = await blobStore.putFile(tmpPath)
+
+    if (config.has('backupStore')) {
+      try {
+        const { backupBlob } = await import('../../storage/lib/backupBlob.mjs')
+        await backupBlob(projectId, newBlob, tmpPath)
+      } catch (error) {
+        logger.warn({ error, projectId, hash }, 'Failed to backup blob')
+      }
+    }
     res.status(HTTPStatus.CREATED).end()
   })
+}
+
+async function headProjectBlob(req, res) {
+  const projectId = req.swagger.params.project_id.value
+  const hash = req.swagger.params.hash.value
+
+  const blobStore = new BlobStore(projectId)
+  const blob = await blobStore.getBlob(hash)
+  if (blob) {
+    res.set('Content-Length', blob.getByteLength())
+    res.status(200).end()
+  } else {
+    res.status(404).end()
+  }
+}
+
+// Support simple, singular ranges starting from zero only, up-to 2MB = 2_000_000, 7 digits
+const RANGE_HEADER = /^bytes=0-(\d{1,7})$/
+
+/**
+ * @param {string} header
+ * @return {{}|{start: number, end: number}}
+ * @private
+ */
+function _getRangeOpts(header) {
+  if (!header) return {}
+  const match = header.match(RANGE_HEADER)
+  if (match) {
+    const end = parseInt(match[1], 10)
+    return { start: 0, end }
+  }
+  return {}
 }
 
 async function getProjectBlob(req, res, next) {
   const projectId = req.swagger.params.project_id.value
   const hash = req.swagger.params.hash.value
+  const opts = _getRangeOpts(req.swagger.params.range.value || '')
 
   const blobStore = new BlobStore(projectId)
   logger.debug({ projectId, hash }, 'getProjectBlob started')
   try {
     let stream
     try {
-      stream = await blobStore.getStream(hash)
+      stream = await blobStore.getStream(hash, opts)
     } catch (err) {
       if (err instanceof Blob.NotFoundError) {
-        return render.notFound(res)
+        logger.warn({ projectId, hash }, 'Blob not found')
+        return res.status(404).end()
       } else {
         throw err
       }
     }
     res.set('Content-Type', 'application/octet-stream')
-    await pipeline(stream, res)
+    try {
+      await pipeline(stream, res)
+    } catch (err) {
+      if (err?.code === 'ERR_STREAM_PREMATURE_CLOSE') {
+        res.end()
+      } else {
+        throw OError.tag(err, 'error transferring stream', { projectId, hash })
+      }
+    }
   } finally {
     logger.debug({ projectId, hash }, 'getProjectBlob finished')
   }
+}
+
+async function copyProjectBlob(req, res, next) {
+  const sourceProjectId = req.swagger.params.copyFrom.value
+  const targetProjectId = req.swagger.params.project_id.value
+  const blobHash = req.swagger.params.hash.value
+  // Check that blob exists in source project
+  const sourceBlobStore = new BlobStore(sourceProjectId)
+  const targetBlobStore = new BlobStore(targetProjectId)
+  const [sourceBlob, targetBlob] = await Promise.all([
+    sourceBlobStore.getBlob(blobHash),
+    targetBlobStore.getBlob(blobHash),
+  ])
+  if (!sourceBlob) {
+    return render.notFound(res)
+  }
+  // Exit early if the blob exists in the target project.
+  // This will also catch global blobs, which always exist.
+  if (targetBlob) {
+    return res.status(HTTPStatus.NO_CONTENT).end()
+  }
+  // Otherwise, copy blob from source project to target project
+  await sourceBlobStore.copyBlob(sourceBlob, targetProjectId)
+  res.status(HTTPStatus.CREATED).end()
 }
 
 async function getSnapshotAtVersion(projectId, version) {
@@ -227,14 +369,19 @@ async function getSnapshotAtVersion(projectId, version) {
 module.exports = {
   initializeProject: expressify(initializeProject),
   getLatestContent: expressify(getLatestContent),
+  getContentAtVersion: expressify(getContentAtVersion),
   getLatestHashedContent: expressify(getLatestHashedContent),
   getLatestPersistedHistory: expressify(getLatestHistory),
   getLatestHistory: expressify(getLatestHistory),
+  getLatestHistoryRaw: expressify(getLatestHistoryRaw),
   getHistory: expressify(getHistory),
   getHistoryBefore: expressify(getHistoryBefore),
+  getChanges: expressify(getChanges),
   getZip: expressify(getZip),
   createZip: expressify(createZip),
   deleteProject: expressify(deleteProject),
   createProjectBlob: expressify(createProjectBlob),
   getProjectBlob: expressify(getProjectBlob),
+  headProjectBlob: expressify(headProjectBlob),
+  copyProjectBlob: expressify(copyProjectBlob),
 }

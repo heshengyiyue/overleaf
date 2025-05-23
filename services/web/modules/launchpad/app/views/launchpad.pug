@@ -25,6 +25,7 @@ block entrypointVar
 					
 block vars
 	- metadata = metadata || {}
+	- bootstrap5PageStatus = 'disabled'
 
 block append meta
 	meta(name="ol-adminUserExists" data-type="boolean" content=adminUserExists)
@@ -165,13 +166,6 @@ block content
 										.col-md-12.status-indicators
 
 											h2 #{translate('status_checks')}
-
-											<!-- ide js -->
-											.row.row-spaced-small
-												.col-sm-5
-													| #{translate('editor_resources')}
-												.col-sm-7
-													+launchpad-check('ide')
 
 											<!-- websocket -->
 											.row.row-spaced-small

@@ -3,17 +3,16 @@ import { screen, render } from '@testing-library/react'
 import fetchMock from 'fetch-mock'
 
 import LeaveModalContent from '../../../../../../frontend/js/features/settings/components/leave/modal-content'
+import getMeta from '@/utils/meta'
 
 describe('<LeaveModalContent />', function () {
   beforeEach(function () {
-    window.metaAttributesCache = new Map()
-    window.metaAttributesCache.set('ol-ExposedSettings', { isOverleaf: true })
+    Object.assign(getMeta('ol-ExposedSettings'), { isOverleaf: true })
     window.metaAttributesCache.set('ol-hasPassword', true)
   })
 
   afterEach(function () {
-    window.metaAttributesCache = new Map()
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   it('disable delete button if form is not valid', function () {

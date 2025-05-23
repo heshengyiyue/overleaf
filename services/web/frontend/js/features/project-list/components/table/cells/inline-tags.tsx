@@ -1,11 +1,10 @@
-import { useCallback, useState, useRef } from 'react'
+import { useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Tag } from '../../../../../../../app/src/Features/Tags/types'
-import Icon from '../../../../../shared/components/icon'
+import { Tag as TagType } from '../../../../../../../app/src/Features/Tags/types'
 import { useProjectListContext } from '../../../context/project-list-context'
 import { removeProjectFromTag } from '../../../util/api'
-import classnames from 'classnames'
 import { getTagColor } from '../../../util/tag'
+import Tag from '@/features/ui/components/bootstrap-5/tag'
 
 type InlineTagsProps = {
   projectId: string
@@ -27,24 +26,13 @@ function InlineTags({ projectId, ...props }: InlineTagsProps) {
 }
 
 type InlineTagProps = {
-  tag: Tag
+  tag: TagType
   projectId: string
 }
 
 function InlineTag({ tag, projectId }: InlineTagProps) {
   const { t } = useTranslation()
   const { selectTag, removeProjectFromTagInView } = useProjectListContext()
-  const [classNames, setClassNames] = useState('')
-  const tagLabelRef = useRef(null)
-  const tagBtnRef = useRef<HTMLButtonElement>(null)
-
-  const handleLabelClick = (e: React.MouseEvent) => {
-    // trigger the click on the button only when the event
-    // is triggered from the wrapper element
-    if (e.target === tagLabelRef.current) {
-      tagBtnRef.current?.click()
-    }
-  }
 
   const handleRemoveTag = useCallback(
     async (tagId: string, projectId: string) => {
@@ -53,42 +41,25 @@ function InlineTag({ tag, projectId }: InlineTagProps) {
     },
     [removeProjectFromTagInView]
   )
-  const handleCloseMouseOver = () => setClassNames('tag-label-close-hover')
-  const handleCloseMouseOut = () => setClassNames('')
-
   return (
-    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
-    <div
-      className={classnames('tag-label', classNames)}
-      onClick={handleLabelClick}
-      ref={tagLabelRef}
+    <Tag
+      prepend={
+        <i
+          className="badge-tag-circle"
+          style={{ backgroundColor: getTagColor(tag) }}
+        />
+      }
+      contentProps={{
+        'aria-label': t('select_tag', { tagName: tag.name }),
+        onClick: () => selectTag(tag._id),
+      }}
+      closeBtnProps={{
+        onClick: () => handleRemoveTag(tag._id, projectId),
+      }}
+      className="ms-2"
     >
-      <button
-        className="label label-default tag-label-name"
-        aria-label={t('select_tag', { tagName: tag.name })}
-        ref={tagBtnRef}
-        onClick={() => selectTag(tag._id)}
-      >
-        <span
-          style={{
-            color: getTagColor(tag),
-          }}
-        >
-          <Icon type="circle" aria-hidden="true" />
-        </span>{' '}
-        {tag.name}
-      </button>
-      {/* eslint-disable-next-line jsx-a11y/mouse-events-have-key-events */}
-      <button
-        className="label label-default tag-label-remove"
-        aria-label={t('remove_tag', { tagName: tag.name })}
-        onClick={() => handleRemoveTag(tag._id, projectId)}
-        onMouseOver={handleCloseMouseOver}
-        onMouseOut={handleCloseMouseOut}
-      >
-        <span aria-hidden="true">×</span>
-      </button>
-    </div>
+      {tag.name}
+    </Tag>
   )
 }
 

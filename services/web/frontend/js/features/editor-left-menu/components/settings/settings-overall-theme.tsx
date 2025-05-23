@@ -5,8 +5,8 @@ import getMeta from '../../../../utils/meta'
 import SettingsMenuSelect, { Option } from './settings-menu-select'
 import { useProjectSettingsContext } from '../../context/project-settings-context'
 import type { OverallThemeMeta } from '../../../../../../types/project-settings'
-import type { OverallTheme } from '../../../source-editor/extensions/theme'
-import { ExposedSettings } from '../../../../../../types/exposed-settings'
+import { isIEEEBranded } from '@/utils/is-ieee-branded'
+import { OverallTheme } from '@/shared/utils/styles'
 
 export default function SettingsOverallTheme() {
   const { t } = useTranslation()
@@ -25,11 +25,7 @@ export default function SettingsOverallTheme() {
     [overallThemes]
   )
 
-  const brandVariation = getMeta('ol-brandVariation') as any
-  const { ieeeBrandId } = getMeta('ol-ExposedSettings') as ExposedSettings
-  const isIEEEBranded = brandVariation?.brand_id === ieeeBrandId
-
-  if (!overallThemes || isIEEEBranded) {
+  if (!overallThemes || isIEEEBranded()) {
     return null
   }
 

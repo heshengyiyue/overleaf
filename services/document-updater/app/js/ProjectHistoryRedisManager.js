@@ -9,12 +9,12 @@ const rclient = require('@overleaf/redis-wrapper').createClient(
 const logger = require('@overleaf/logger')
 const metrics = require('./Metrics')
 const { docIsTooLarge } = require('./Limits')
-const { addTrackedDeletesToContent } = require('./Utils')
+const { addTrackedDeletesToContent, extractOriginOrSource } = require('./Utils')
 const HistoryConversions = require('./HistoryConversions')
 const OError = require('@overleaf/o-error')
 
 /**
- * @typedef {import('./types').Ranges} Ranges
+ * @import { Ranges } from './types'
  */
 
 const ProjectHistoryRedisManager = {
@@ -54,7 +54,7 @@ const ProjectHistoryRedisManager = {
     entityId,
     userId,
     projectUpdate,
-    source
+    originOrSource
   ) {
     projectUpdate = {
       pathname: projectUpdate.pathname,
@@ -67,7 +67,15 @@ const ProjectHistoryRedisManager = {
       projectHistoryId,
     }
     projectUpdate[entityType] = entityId
-    if (source != null) {
+
+    const { origin, source } = extractOriginOrSource(originOrSource)
+
+    if (origin != null) {
+      projectUpdate.meta.origin = origin
+      if (origin.kind !== 'editor') {
+        projectUpdate.meta.type = 'external'
+      }
+    } else if (source != null) {
       projectUpdate.meta.source = source
       if (source !== 'editor') {
         projectUpdate.meta.type = 'external'
@@ -90,7 +98,7 @@ const ProjectHistoryRedisManager = {
     entityId,
     userId,
     projectUpdate,
-    source
+    originOrSource
   ) {
     let docLines = projectUpdate.docLines
     let ranges
@@ -111,13 +119,24 @@ const ProjectHistoryRedisManager = {
         ts: new Date(),
       },
       version: projectUpdate.version,
+      hash: projectUpdate.hash,
+      metadata: projectUpdate.metadata,
       projectHistoryId,
+      createdBlob: projectUpdate.createdBlob ?? false,
     }
     if (ranges) {
       projectUpdate.ranges = ranges
     }
     projectUpdate[entityType] = entityId
-    if (source != null) {
+
+    const { origin, source } = extractOriginOrSource(originOrSource)
+
+    if (origin != null) {
+      projectUpdate.meta.origin = origin
+      if (origin.kind !== 'editor') {
+        projectUpdate.meta.type = 'external'
+      }
+    } else if (source != null) {
       projectUpdate.meta.source = source
       if (source !== 'editor') {
         projectUpdate.meta.type = 'external'
@@ -133,7 +152,13 @@ const ProjectHistoryRedisManager = {
     return await ProjectHistoryRedisManager.queueOps(projectId, jsonUpdate)
   },
 
-  async queueResyncProjectStructure(projectId, projectHistoryId, docs, files) {
+  async queueResyncProjectStructure(
+    projectId,
+    projectHistoryId,
+    docs,
+    files,
+    opts
+  ) {
     logger.debug({ projectId, docs, files }, 'queue project structure resync')
     const projectUpdate = {
       resyncProjectStructure: { docs, files },
@@ -141,6 +166,9 @@ const ProjectHistoryRedisManager = {
       meta: {
         ts: new Date(),
       },
+    }
+    if (opts.resyncProjectStructureOnly) {
+      projectUpdate.resyncProjectStructureOnly = opts.resyncProjectStructureOnly
     }
     const jsonUpdate = JSON.stringify(projectUpdate)
     return await ProjectHistoryRedisManager.queueOps(projectId, jsonUpdate)

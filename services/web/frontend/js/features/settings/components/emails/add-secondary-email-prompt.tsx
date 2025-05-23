@@ -1,6 +1,6 @@
 import { Interstitial } from '@/shared/components/interstitial'
 import useWaitForI18n from '@/shared/hooks/use-wait-for-i18n'
-import { Button } from 'react-bootstrap'
+import OLButton from '@/features/ui/components/ol/ol-button'
 import { Trans, useTranslation } from 'react-i18next'
 import EmailInput from './add-email/input'
 import { useState } from 'react'
@@ -10,6 +10,8 @@ import { ReCaptcha2 } from '../../../../shared/components/recaptcha-2'
 import { useRecaptcha } from '../../../../shared/hooks/use-recaptcha'
 
 import { postJSON } from '../../../../infrastructure/fetch-json'
+import RecaptchaConditions from '@/shared/components/recaptcha-conditions'
+import getMeta from '@/utils/meta'
 
 type AddSecondaryEmailError = {
   name: string
@@ -80,7 +82,7 @@ export function AddSecondaryEmailPrompt() {
     <>
       <Interstitial showLogo title={t('add_a_recovery_email_address')}>
         <form className="add-secondary-email" onSubmit={handleSubmit}>
-          <ReCaptcha2 page="addEmail" ref={recaptchaRef} />
+          <ReCaptcha2 page="addEmail" recaptchaRef={recaptchaRef} />
           <p>{t('keep_your_account_safe_add_another_email')}</p>
 
           <EmailInput
@@ -92,22 +94,12 @@ export function AddSecondaryEmailPrompt() {
             {error && <ErrorMessage error={error} />}
           </div>
 
-          <Button
-            bsStyle={null}
-            disabled={isSubmitting}
-            className="btn-primary"
-            type="submit"
-          >
+          <OLButton disabled={isSubmitting} variant="primary" type="submit">
             {isSubmitting ? <>{t('adding')}&hellip;</> : t('add_email_address')}
-          </Button>
-          <Button
-            bsStyle={null}
-            disabled={isSubmitting}
-            className="btn-secondary"
-            href="/project"
-          >
+          </OLButton>
+          <OLButton disabled={isSubmitting} variant="secondary" href="/project">
             {t('not_now')}
-          </Button>
+          </OLButton>
           <p className="add-secondary-email-learn-more">
             <Trans
               i18nKey="learn_more_about_account"
@@ -119,6 +111,11 @@ export function AddSecondaryEmailPrompt() {
           </p>
         </form>
       </Interstitial>
+      {!getMeta('ol-ExposedSettings').recaptchaDisabled?.addEmail && (
+        <div className="mt-5">
+          <RecaptchaConditions />
+        </div>
+      )}
     </>
   )
 }

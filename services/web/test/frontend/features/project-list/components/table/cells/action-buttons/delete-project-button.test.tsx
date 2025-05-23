@@ -17,22 +17,22 @@ describe('<DeleteProjectButton />', function () {
     resetProjectListContextFetch()
   })
 
-  it('renders tooltip for button', function () {
-    window.user_id = trashedProject?.owner?.id
+  it('renders tooltip for button', async function () {
+    window.metaAttributesCache.set('ol-user_id', trashedProject.owner?.id)
     renderWithProjectListContext(
       <DeleteProjectButtonTooltip project={trashedProject} />
     )
-    const btn = screen.getByLabelText('Delete')
+    const btn = screen.getByRole('button', { name: 'Delete' })
     fireEvent.mouseOver(btn)
-    screen.getByRole('tooltip', { name: 'Delete' })
+    await screen.findByRole('tooltip', { name: 'Delete' })
   })
 
   it('does not render button when trashed and not owner', function () {
-    window.user_id = '123abc'
+    window.metaAttributesCache.set('ol-user_id', '123abc')
     renderWithProjectListContext(
       <DeleteProjectButtonTooltip project={trashedAndNotOwnedProject} />
     )
-    const btn = screen.queryByLabelText('Delete')
+    const btn = screen.queryByRole('button', { name: 'Delete' })
     expect(btn).to.be.null
   })
 
@@ -40,11 +40,11 @@ describe('<DeleteProjectButton />', function () {
     renderWithProjectListContext(
       <DeleteProjectButtonTooltip project={archiveableProject} />
     )
-    expect(screen.queryByLabelText('Delete')).to.be.null
+    expect(screen.queryByRole('button', { name: 'Delete' })).to.be.null
   })
 
   it('opens the modal and deletes the project', async function () {
-    window.user_id = trashedProject?.owner?.id
+    window.metaAttributesCache.set('ol-user_id', trashedProject.owner?.id)
     const project = Object.assign({}, trashedProject)
     const deleteProjectMock = fetchMock.delete(
       `express:/project/:projectId`,
@@ -56,18 +56,21 @@ describe('<DeleteProjectButton />', function () {
     renderWithProjectListContext(
       <DeleteProjectButtonTooltip project={project} />
     )
-    const btn = screen.getByLabelText('Delete')
+    const btn = screen.getByRole('button', { name: 'Delete' })
     fireEvent.click(btn)
     screen.getByText('Delete Projects')
     screen.getByText('You are about to delete the following projects:')
     screen.getByText('This action cannot be undone.')
-    const confirmBtn = screen.getByText('Confirm') as HTMLButtonElement
+    const confirmBtn = screen.getByRole('button', {
+      name: 'Confirm',
+    }) as HTMLButtonElement
     fireEvent.click(confirmBtn)
     expect(confirmBtn.disabled).to.be.true
 
     await waitFor(
       () =>
-        expect(deleteProjectMock.called(`/project/${project.id}`)).to.be.true
+        expect(deleteProjectMock.callHistory.called(`/project/${project.id}`))
+          .to.be.true
     )
   })
 })

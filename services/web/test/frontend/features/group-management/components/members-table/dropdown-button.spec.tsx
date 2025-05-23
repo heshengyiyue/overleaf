@@ -6,14 +6,15 @@ import { User } from '../../../../../../types/group-management/user'
 
 function Wrapper({ children }: PropsWithChildren<Record<string, unknown>>) {
   return (
-    <ul className="managed-users-list">
-      <span
-        className="managed-users-actions"
-        style={{ display: 'flex', width: '100%', justifyContent: 'flex-end' }}
-      >
-        <GroupMembersProvider>{children}</GroupMembersProvider>
-      </span>
-    </ul>
+    <table className="table">
+      <tbody>
+        <tr>
+          <td className="managed-users-actions" style={{ textAlign: 'right' }}>
+            <GroupMembersProvider>{children}</GroupMembersProvider>
+          </td>
+        </tr>
+      </tbody>
+    </table>
   )
 }
 
@@ -59,11 +60,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-group-invite-action').should('be.visible')
         cy.findByTestId('remove-user-action').should('be.visible')
 
@@ -96,11 +97,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('remove-user-action').should('be.visible')
 
@@ -141,11 +142,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-group-invite-action').should('be.visible')
         cy.findByTestId('remove-user-action').should('be.visible')
 
@@ -181,11 +182,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('delete-user-action').should('be.visible')
 
@@ -220,11 +221,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('resend-managed-user-invite-action').should(
           'be.visible'
@@ -263,11 +264,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the (empty) menu when the button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('no-actions-available').should('exist')
       })
     })
@@ -305,11 +306,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-group-invite-action').should('be.visible')
         cy.findByTestId('remove-user-action').should('be.visible')
 
@@ -340,7 +341,7 @@ describe('DropdownButton', function () {
 
       it('should show resend invite when user is admin', function () {
         mountDropDownComponent({ ...user, isEntityAdmin: true }, '123abc')
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-sso-link-invite-action').should('exist')
       })
 
@@ -349,7 +350,7 @@ describe('DropdownButton', function () {
           win.metaAttributesCache.set('ol-groupSSOActive', false)
         })
         mountDropDownComponent(user, '123abc')
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-sso-link-invite-action').should('not.exist')
       })
 
@@ -358,7 +359,7 @@ describe('DropdownButton', function () {
           win.metaAttributesCache.set('ol-groupSSOActive', true)
         })
         mountDropDownComponent(user, '123abc')
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-sso-link-invite-action').should('be.visible')
       })
 
@@ -372,7 +373,7 @@ describe('DropdownButton', function () {
           { success: true }
         ).as('resendInviteRequest')
         mountDropDownComponent(user, '123abc')
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-sso-link-invite-action')
           .should('exist')
           .as('resendInvite')
@@ -414,11 +415,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
         cy.findByTestId('resend-group-invite-action').should('be.visible')
         cy.findByTestId('remove-user-action').should('be.visible')
 
@@ -461,11 +462,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('resend-managed-user-invite-action').should(
           'be.visible'
@@ -503,11 +504,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('resend-managed-user-invite-action').should(
           'be.visible'
@@ -552,11 +553,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('resend-managed-user-invite-action').should(
           'be.visible'
@@ -596,11 +597,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('resend-managed-user-invite-action').should(
           'be.visible'
@@ -640,11 +641,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('delete-user-action').should('be.visible')
 
@@ -689,11 +690,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('delete-user-action').should('be.visible')
 
@@ -733,11 +734,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show the correct menu when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('resend-sso-link-invite-action').should('exist')
 
@@ -782,11 +783,11 @@ describe('DropdownButton', function () {
         cy.get('#managed-user-dropdown-some\\.user\\@example\\.com').should(
           'exist'
         )
-        cy.get(`.action-btn`).should('exist')
+        cy.findByRole('button', { name: /actions/i })
       })
 
       it('should show no actions except to unlink when dropdown button is clicked', function () {
-        cy.get('.action-btn').click()
+        cy.findByRole('button', { name: /actions/i }).click()
 
         cy.findByTestId('unlink-user-action').should('exist')
 

@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next'
 import { memo, useCallback } from 'react'
 import { Project } from '../../../../../../../../types/project/dashboard/api'
-import Icon from '../../../../../../shared/components/icon'
-import Tooltip from '../../../../../../shared/components/tooltip'
 import { useProjectListContext } from '../../../../context/project-list-context'
 import { untrashProject } from '../../../../util/api'
+import OLTooltip from '@/features/ui/components/ol/ol-tooltip'
+import OLIconButton from '@/features/ui/components/ol/ol-icon-button'
 
 type UntrashProjectButtonProps = {
   project: Project
@@ -40,20 +40,22 @@ const UntrashProjectButtonTooltip = memo(function UntrashProjectButtonTooltip({
   return (
     <UntrashProjectButton project={project}>
       {(text, handleUntrashProject) => (
-        <Tooltip
+        <OLTooltip
           key={`tooltip-untrash-project-${project.id}`}
           id={`untrash-project-${project.id}`}
           description={text}
           overlayProps={{ placement: 'top', trigger: ['hover', 'focus'] }}
         >
-          <button
-            className="btn btn-link action-btn"
-            aria-label={text}
-            onClick={handleUntrashProject}
-          >
-            <Icon type="reply" fw />
-          </button>
-        </Tooltip>
+          <span>
+            <OLIconButton
+              onClick={handleUntrashProject}
+              variant="link"
+              accessibilityLabel={text}
+              className="action-btn"
+              icon="restore_page"
+            />
+          </span>
+        </OLTooltip>
       )}
     </UntrashProjectButton>
   )

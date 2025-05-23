@@ -1,8 +1,10 @@
-/** @module */
+// @ts-check
+
 'use strict'
 
 const _ = require('lodash')
-const BPromise = require('bluebird')
+const logger = require('@overleaf/logger')
+const metrics = require('@overleaf/metrics')
 
 const core = require('overleaf-editor-core')
 const Chunk = core.Chunk
@@ -10,6 +12,10 @@ const History = core.History
 
 const assert = require('./assert')
 const chunkStore = require('./chunk_store')
+const { BlobStore } = require('./blob_store')
+const { InvalidChangeError } = require('./errors')
+const { getContentHash } = require('./content_hash')
+const redisBackend = require('./chunk_store/redis')
 
 function countChangeBytes(change) {
   // Note: This is not quite accurate, because the raw change may contain raw
@@ -48,28 +54,35 @@ Timer.prototype.elapsed = function () {
  *    endVersion may be better suited to the metadata record.
  *
  * @param {string} projectId
- * @param {Array.<Change>} allChanges
+ * @param {core.Change[]} allChanges
  * @param {Object} limits
  * @param {number} clientEndVersion
  * @return {Promise.<Object?>}
  */
-module.exports = function persistChanges(
-  projectId,
-  allChanges,
-  limits,
-  clientEndVersion
-) {
+async function persistChanges(projectId, allChanges, limits, clientEndVersion) {
   assert.projectId(projectId)
   assert.array(allChanges)
   assert.maybe.object(limits)
   assert.integer(clientEndVersion)
 
+  const blobStore = new BlobStore(projectId)
+
+  const earliestChangeTimestamp =
+    allChanges.length > 0 ? allChanges[0].getTimestamp() : null
+
   let currentChunk
-  // currentSnapshot tracks the latest change that we're applying; we use it to
-  // check that the changes we are persisting are valid.
+
+  /**
+   * currentSnapshot tracks the latest change that we're applying; we use it to
+   * check that the changes we are persisting are valid.
+   *
+   * @type {core.Snapshot}
+   */
   let currentSnapshot
+
   let originalEndVersion
   let changesToPersist
+  let resyncNeeded = false
 
   limits = limits || {}
   _.defaults(limits, {
@@ -88,57 +101,174 @@ module.exports = function persistChanges(
     }
   }
 
-  function fillChunk(chunk, changes) {
+  /**
+   * Add changes to a chunk until the chunk is full
+   *
+   * The chunk is full if it reaches a certain number of changes or a certain
+   * size in bytes
+   *
+   * @param {core.Chunk} chunk
+   * @param {core.Change[]} changes
+   */
+  async function fillChunk(chunk, changes) {
     let totalBytes = totalChangeBytes(chunk.getChanges())
     let changesPushed = false
     while (changes.length > 0) {
-      if (chunk.getChanges().length >= limits.maxChunkChanges) break
-      const changeBytes = countChangeBytes(changes[0])
-      if (totalBytes + changeBytes > limits.maxChunkChangeBytes) break
-      const changesToFill = changes.splice(0, 1)
-      currentSnapshot.applyAll(changesToFill, { strict: true })
-      chunk.pushChanges(changesToFill)
+      if (chunk.getChanges().length >= limits.maxChunkChanges) {
+        break
+      }
+
+      const change = changes[0]
+      const changeBytes = countChangeBytes(change)
+
+      if (totalBytes + changeBytes > limits.maxChunkChangeBytes) {
+        break
+      }
+
+      for (const operation of change.iterativelyApplyTo(currentSnapshot, {
+        strict: true,
+      })) {
+        await validateContentHash(operation)
+      }
+
+      chunk.pushChanges([change])
+      changes.shift()
       totalBytes += changeBytes
       changesPushed = true
     }
     return changesPushed
   }
 
-  function extendLastChunkIfPossible() {
-    return chunkStore.loadLatest(projectId).then(function (latestChunk) {
-      currentChunk = latestChunk
-      originalEndVersion = latestChunk.getEndVersion()
-      if (originalEndVersion !== clientEndVersion) {
-        throw new Chunk.ConflictingEndVersion(
-          clientEndVersion,
-          originalEndVersion
-        )
+  /**
+   * Check that the operation is valid and can be incorporated to the history.
+   *
+   * For now, this checks content hashes when they are provided.
+   *
+   * @param {core.Operation} operation
+   */
+  async function validateContentHash(operation) {
+    if (operation instanceof core.EditFileOperation) {
+      const editOperation = operation.getOperation()
+      if (
+        editOperation instanceof core.TextOperation &&
+        editOperation.contentHash != null
+      ) {
+        const path = operation.getPathname()
+        const file = currentSnapshot.getFile(path)
+        if (file == null) {
+          throw new InvalidChangeError('file not found for hash validation', {
+            projectId,
+            path,
+          })
+        }
+        await file.load('eager', blobStore)
+        const content = file.getContent({ filterTrackedDeletes: true })
+        const expectedHash = editOperation.contentHash
+        const actualHash = content != null ? getContentHash(content) : null
+        logger.debug({ expectedHash, actualHash }, 'validating content hash')
+        if (actualHash !== expectedHash) {
+          // only log a warning on the first mismatch in each persistChanges call
+          if (!resyncNeeded) {
+            logger.warn(
+              { projectId, path, expectedHash, actualHash },
+              'content hash mismatch'
+            )
+          }
+          resyncNeeded = true
+        }
+
+        // Remove the content hash from the change before storing it in the chunk.
+        // It was only useful for validation.
+        editOperation.contentHash = null
       }
-
-      currentSnapshot = latestChunk.getSnapshot().clone()
-      const timer = new Timer()
-      currentSnapshot.applyAll(latestChunk.getChanges())
-
-      if (!fillChunk(currentChunk, changesToPersist)) return
-      checkElapsedTime(timer)
-
-      return chunkStore.update(projectId, originalEndVersion, currentChunk)
-    })
+    }
   }
 
-  function createNewChunksAsNeeded() {
-    if (changesToPersist.length === 0) return
+  async function loadLatestChunk() {
+    const latestChunk = await chunkStore.loadLatest(projectId, {
+      persistedOnly: true,
+    })
 
-    const endVersion = currentChunk.getEndVersion()
-    const history = new History(currentSnapshot.clone(), [])
-    const chunk = new Chunk(history, endVersion)
-    const timer = new Timer()
-    if (fillChunk(chunk, changesToPersist)) {
-      checkElapsedTime(timer)
-      currentChunk = chunk
-      return chunkStore.create(projectId, chunk).then(createNewChunksAsNeeded)
+    currentChunk = latestChunk
+    originalEndVersion = latestChunk.getEndVersion()
+    if (originalEndVersion !== clientEndVersion) {
+      throw new Chunk.ConflictingEndVersion(
+        clientEndVersion,
+        originalEndVersion
+      )
     }
-    throw new Error('failed to fill empty chunk')
+
+    currentSnapshot = latestChunk.getSnapshot().clone()
+    currentSnapshot.applyAll(currentChunk.getChanges())
+  }
+
+  async function queueChangesInRedis() {
+    const hollowSnapshot = currentSnapshot.clone()
+    // We're transforming a lazy snapshot to a hollow snapshot, so loadFiles()
+    // doesn't really need a blobStore, but its signature still requires it.
+    const blobStore = new BlobStore(projectId)
+    await hollowSnapshot.loadFiles('hollow', blobStore)
+    hollowSnapshot.applyAll(changesToPersist, { strict: true })
+    const baseVersion = currentChunk.getEndVersion()
+    await redisBackend.queueChanges(
+      projectId,
+      hollowSnapshot,
+      baseVersion,
+      changesToPersist
+    )
+  }
+
+  async function fakePersistRedisChanges() {
+    const baseVersion = currentChunk.getEndVersion()
+    const nonPersistedChanges = await redisBackend.getNonPersistedChanges(
+      projectId,
+      baseVersion
+    )
+
+    if (
+      serializeChanges(nonPersistedChanges) ===
+      serializeChanges(changesToPersist)
+    ) {
+      metrics.inc('persist_redis_changes_verification', 1, { status: 'match' })
+    } else {
+      logger.warn({ projectId }, 'mismatch of non-persisted changes from Redis')
+      metrics.inc('persist_redis_changes_verification', 1, {
+        status: 'mismatch',
+      })
+    }
+
+    const persistedVersion = baseVersion + nonPersistedChanges.length
+    await redisBackend.setPersistedVersion(projectId, persistedVersion)
+  }
+
+  async function extendLastChunkIfPossible() {
+    const timer = new Timer()
+    const changesPushed = await fillChunk(currentChunk, changesToPersist)
+    if (!changesPushed) {
+      return
+    }
+
+    checkElapsedTime(timer)
+
+    await chunkStore.update(projectId, currentChunk, earliestChangeTimestamp)
+  }
+
+  async function createNewChunksAsNeeded() {
+    while (changesToPersist.length > 0) {
+      const endVersion = currentChunk.getEndVersion()
+      const history = new History(currentSnapshot.clone(), [])
+      const chunk = new Chunk(history, endVersion)
+      const timer = new Timer()
+
+      const changesPushed = await fillChunk(chunk, changesToPersist)
+      if (changesPushed) {
+        checkElapsedTime(timer)
+        currentChunk = chunk
+        await chunkStore.create(projectId, chunk, earliestChangeTimestamp)
+      } else {
+        throw new Error('failed to fill empty chunk')
+      }
+    }
   }
 
   function isOlderThanMinChangeTimestamp(change) {
@@ -157,15 +287,33 @@ module.exports = function persistChanges(
   if (anyTooOld || tooManyChanges || tooManyBytes) {
     changesToPersist = oldChanges
     const numberOfChangesToPersist = oldChanges.length
-    return extendLastChunkIfPossible()
-      .then(createNewChunksAsNeeded)
-      .then(function () {
-        return {
-          numberOfChangesPersisted: numberOfChangesToPersist,
-          originalEndVersion,
-          currentChunk,
-        }
-      })
+
+    await loadLatestChunk()
+    try {
+      await queueChangesInRedis()
+      await fakePersistRedisChanges()
+    } catch (err) {
+      logger.error({ err }, 'Chunk buffer verification failed')
+    }
+    await extendLastChunkIfPossible()
+    await createNewChunksAsNeeded()
+
+    return {
+      numberOfChangesPersisted: numberOfChangesToPersist,
+      originalEndVersion,
+      currentChunk,
+      resyncNeeded,
+    }
+  } else {
+    return null
   }
-  return BPromise.resolve(null)
 }
+
+/**
+ * @param {core.Change[]} changes
+ */
+function serializeChanges(changes) {
+  return JSON.stringify(changes.map(change => change.toRaw()))
+}
+
+module.exports = persistChanges

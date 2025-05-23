@@ -1,19 +1,25 @@
 import {
-  useState,
   type ComponentProps,
   useCallback,
   type Dispatch,
   type SetStateAction,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Dropdown, MenuItem } from 'react-bootstrap'
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownMenu,
+  DropdownToggle,
+} from '@/features/ui/components/bootstrap-5/dropdown-menu'
 import { User } from '../../../../../../types/group-management/user'
 import useAsync from '@/shared/hooks/use-async'
 import { type FetchError, postJSON } from '@/infrastructure/fetch-json'
-import Icon from '@/shared/components/icon'
 import { GroupUserAlert } from '../../utils/types'
 import { useGroupMembersContext } from '../../context/group-members-context'
 import getMeta from '@/utils/meta'
+import MaterialIcon from '@/shared/components/material-icon'
+import DropdownListItem from '@/features/ui/components/bootstrap-5/dropdown-list-item'
+import { Spinner } from 'react-bootstrap'
 
 type resendInviteResponse = {
   success: boolean
@@ -36,7 +42,6 @@ export default function DropdownButton({
 }: ManagedUserDropdownButtonProps) {
   const { t } = useTranslation()
   const { removeMember } = useGroupMembersContext()
-  const [isOpened, setIsOpened] = useState(false)
   const {
     runAsync: runResendManagedUserInviteAsync,
     isLoading: isResendingManagedUserInvite,
@@ -59,7 +64,7 @@ export default function DropdownButton({
   const isUserManaged = !userPending && user.enrollment?.managedBy === groupId
 
   const handleResendManagedUserInvite = useCallback(
-    async user => {
+    async (user: User) => {
       try {
         const result = await runResendManagedUserInviteAsync(
           postJSON(
@@ -72,7 +77,6 @@ export default function DropdownButton({
             variant: 'resendManagedUserInviteSuccess',
             email: user.email,
           })
-          setIsOpened(false)
         }
       } catch (err) {
         if ((err as FetchError)?.response?.status === 429) {
@@ -86,15 +90,13 @@ export default function DropdownButton({
             email: user.email,
           })
         }
-
-        setIsOpened(false)
       }
     },
     [setGroupUserAlert, groupId, runResendManagedUserInviteAsync]
   )
 
   const handleResendLinkSSOInviteAsync = useCallback(
-    async user => {
+    async (user: User) => {
       try {
         const result = await runResendLinkSSOInviteAsync(
           postJSON(`/manage/groups/${groupId}/resendSSOLinkInvite/${user._id}`)
@@ -105,7 +107,6 @@ export default function DropdownButton({
             variant: 'resendSSOLinkInviteSuccess',
             email: user.email,
           })
-          setIsOpened(false)
         }
       } catch (err) {
         if ((err as FetchError)?.response?.status === 429) {
@@ -119,15 +120,13 @@ export default function DropdownButton({
             email: user.email,
           })
         }
-
-        setIsOpened(false)
       }
     },
     [setGroupUserAlert, groupId, runResendLinkSSOInviteAsync]
   )
 
   const handleResendGroupInvite = useCallback(
-    async user => {
+    async (user: User) => {
       try {
         await runResendGroupInviteAsync(
           postJSON(`/manage/groups/${groupId}/resendInvite/`, {
@@ -141,7 +140,6 @@ export default function DropdownButton({
           variant: 'resendGroupInviteSuccess',
           email: user.email,
         })
-        setIsOpened(false)
       } catch (err) {
         if ((err as FetchError)?.response?.status === 429) {
           setGroupUserAlert({
@@ -154,8 +152,6 @@ export default function DropdownButton({
             email: user.email,
           })
         }
-
-        setIsOpened(false)
       }
     },
     [setGroupUserAlert, groupId, runResendGroupInviteAsync]
@@ -191,12 +187,10 @@ export default function DropdownButton({
       <MenuItemButton
         onClick={onResendGroupInviteClick}
         key="resend-group-invite-action"
+        isLoading={isResendingGroupInvite}
         data-testid="resend-group-invite-action"
       >
         {t('resend_group_invite')}
-        {isResendingGroupInvite ? (
-          <Icon type="spinner" spin style={{ marginLeft: '5px' }} />
-        ) : null}
       </MenuItemButton>
     )
   }
@@ -205,12 +199,10 @@ export default function DropdownButton({
       <MenuItemButton
         onClick={onResendManagedUserInviteClick}
         key="resend-managed-user-invite-action"
+        isLoading={isResendingManagedUserInvite}
         data-testid="resend-managed-user-invite-action"
       >
         {t('resend_managed_user_invite')}
-        {isResendingManagedUserInvite ? (
-          <Icon type="spinner" spin style={{ marginLeft: '5px' }} />
-        ) : null}
       </MenuItemButton>
     )
   }
@@ -230,12 +222,10 @@ export default function DropdownButton({
       <MenuItemButton
         onClick={onResendSSOLinkInviteClick}
         key="resend-sso-link-invite-action"
+        isLoading={isResendingSSOLinkInvite}
         data-testid="resend-sso-link-invite-action"
       >
         {t('resend_link_sso')}
-        {isResendingSSOLinkInvite ? (
-          <Icon type="spinner" spin style={{ marginLeft: '5px' }} />
-        ) : null}
       </MenuItemButton>
     )
   }
@@ -257,6 +247,7 @@ export default function DropdownButton({
         data-testid="remove-user-action"
         onClick={onRemoveFromGroup}
         className="delete-user-action"
+        variant="danger"
       >
         {t('remove_from_group')}
       </MenuItemButton>
@@ -265,54 +256,67 @@ export default function DropdownButton({
 
   if (buttons.length === 0) {
     buttons.push(
-      <MenuItem key="no-actions-available" data-testid="no-actions-available">
-        <span className="text-muted">{t('no_actions')}</span>
-      </MenuItem>
+      <DropdownListItem>
+        <DropdownItem
+          as="button"
+          tabIndex={-1}
+          data-testid="no-actions-available"
+          disabled
+        >
+          {t('no_actions')}
+        </DropdownItem>
+      </DropdownListItem>
     )
   }
 
   return (
-    <span className="managed-user-actions">
-      <Dropdown
+    <Dropdown align="end">
+      <DropdownToggle
         id={`managed-user-dropdown-${user.email}`}
-        open={isOpened}
-        onToggle={open => setIsOpened(open)}
+        bsPrefix="dropdown-table-button-toggle"
       >
-        <Dropdown.Toggle
-          bsStyle={null}
-          className="btn btn-link action-btn"
-          noCaret
-        >
-          <i
-            className="fa fa-ellipsis-v"
-            aria-hidden="true"
-            aria-label={t('actions')}
-          />
-        </Dropdown.Toggle>
-        <Dropdown.Menu className="dropdown-menu-right managed-user-dropdown-menu">
-          {buttons}
-        </Dropdown.Menu>
-      </Dropdown>
-    </span>
+        <MaterialIcon type="more_vert" accessibilityLabel={t('actions')} />
+      </DropdownToggle>
+      <DropdownMenu flip={false}>{buttons}</DropdownMenu>
+    </Dropdown>
   )
 }
+
+type MenuItemButtonProps = {
+  isLoading?: boolean
+  'data-testid'?: string
+} & Pick<ComponentProps<'button'>, 'children' | 'onClick' | 'className'> &
+  Pick<ComponentProps<typeof DropdownItem>, 'variant'>
 
 function MenuItemButton({
   children,
   onClick,
   className,
-  ...buttonProps
-}: ComponentProps<'button'>) {
+  isLoading,
+  variant,
+  'data-testid': dataTestId,
+}: MenuItemButtonProps) {
   return (
-    <li role="presentation" className={className}>
-      <button
-        className="managed-user-menu-item-button"
-        role="menuitem"
+    <DropdownListItem>
+      <DropdownItem
+        as="button"
+        tabIndex={-1}
         onClick={onClick}
-        {...buttonProps}
+        leadingIcon={
+          isLoading ? (
+            <Spinner
+              animation="border"
+              aria-hidden="true"
+              size="sm"
+              role="status"
+            />
+          ) : null
+        }
+        data-testid={dataTestId}
+        variant={variant}
       >
         {children}
-      </button>
-    </li>
+      </DropdownItem>
+    </DropdownListItem>
   )
 }

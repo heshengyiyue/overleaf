@@ -1,7 +1,7 @@
 import sinon from 'sinon'
 import { expect } from 'chai'
 import { strict as esmock } from 'esmock'
-import EventEmitter from 'events'
+import EventEmitter from 'node:events'
 import { RequestFailedError } from '@overleaf/fetch-utils'
 import * as Errors from '../../../../app/js/Errors.js'
 
@@ -17,13 +17,14 @@ describe('HistoryStoreManager', function () {
           host: 'http://example.com',
           user: 'overleaf',
           pass: 'password',
+          requestTimeout: 123,
         },
       },
       apis: {
         filestore: {
+          enabled: true,
           url: 'http://filestore.overleaf.production',
         },
-        history_v1: { requestTimeout: 123 },
       },
     }
     this.latestChunkRequestArgs = sinon.match({
@@ -57,7 +58,11 @@ describe('HistoryStoreManager', function () {
     }
 
     this.request = sinon.stub()
-    this.request.get = sinon.stub()
+
+    this.logger = {
+      debug: sinon.stub(),
+      warn: sinon.stub(),
+    }
 
     this.HistoryStoreManager = await esmock(MODULE_PATH, {
       '@overleaf/fetch-utils': this.FetchUtils,
@@ -66,6 +71,7 @@ describe('HistoryStoreManager', function () {
       '../../../../app/js/LocalFileWriter.js': this.LocalFileWriter,
       '../../../../app/js/WebApiManager.js': this.WebApiManager,
       '../../../../app/js/Errors.js': Errors,
+      '@overleaf/logger': this.logger,
     })
   })
 
@@ -376,6 +382,9 @@ describe('HistoryStoreManager', function () {
       this.fileStream = {}
       this.hash = 'random-hash'
       this.LocalFileWriter.bufferOnDisk.callsArgWith(4, null, this.hash)
+      this.FetchUtils.fetchNothing.rejects(
+        new RequestFailedError('', {}, { status: 404 })
+      )
       this.FetchUtils.fetchStream.resolves(this.fileStream)
     })
 
@@ -385,6 +394,7 @@ describe('HistoryStoreManager', function () {
         this.update = {
           file: true,
           url: `http://filestore.other.cloud.provider/project/${this.projectId}/file/${this.file_id}`,
+          hash: this.hash,
         }
         this.HistoryStoreManager.createBlobForUpdate(
           this.projectId,
@@ -400,6 +410,10 @@ describe('HistoryStoreManager', function () {
         )
       })
 
+      it('should not log any warnings', function () {
+        expect(this.logger.warn).to.not.have.been.called
+      })
+
       it('should request the file from the filestore in settings', function () {
         expect(this.FetchUtils.fetchStream).to.have.been.calledWithMatch(
           `${this.settings.apis.filestore.url}/project/${this.projectId}/file/${this.file_id}`
@@ -411,6 +425,30 @@ describe('HistoryStoreManager', function () {
       })
     })
 
+    describe('with filestore disabled', function () {
+      beforeEach(function (done) {
+        this.settings.apis.filestore.enabled = false
+        this.file_id = '012345678901234567890123'
+        this.update = {
+          file: true,
+          url: `http://filestore.other.cloud.provider/project/${this.projectId}/file/${this.file_id}`,
+          hash: this.hash,
+        }
+        this.HistoryStoreManager.createBlobForUpdate(
+          this.projectId,
+          this.historyId,
+          this.update,
+          err => {
+            expect(err).to.match(/blocking filestore read/)
+            done()
+          }
+        )
+      })
+      it('should not request the file', function () {
+        expect(this.FetchUtils.fetchStream).to.not.have.been.called
+      })
+    })
+
     describe('for a file update with an invalid filestore location', function () {
       beforeEach(function (done) {
         this.invalid_id = '000000000000000000000000'
@@ -418,6 +456,7 @@ describe('HistoryStoreManager', function () {
         this.update = {
           file: true,
           url: `http://filestore.other.cloud.provider/project/${this.invalid_id}/file/${this.file_id}`,
+          hash: this.hash,
         }
         this.HistoryStoreManager.createBlobForUpdate(
           this.projectId,
@@ -431,7 +470,143 @@ describe('HistoryStoreManager', function () {
       })
 
       it('should not request the file from the filestore', function () {
-        expect(this.request.get).to.not.have.been.called
+        expect(this.FetchUtils.fetchStream).to.not.have.been.called
+      })
+    })
+
+    describe('when the hash mismatches', function () {
+      beforeEach(function (done) {
+        this.file_id = '012345678901234567890123'
+        this.update = {
+          file: true,
+          url: `http://filestore.other.cloud.provider/project/${this.projectId}/file/${this.file_id}`,
+          hash: 'another-hash-from-web',
+        }
+        this.HistoryStoreManager.createBlobForUpdate(
+          this.projectId,
+          this.historyId,
+          this.update,
+          (err, { file: hash }) => {
+            if (err) {
+              return done(err)
+            }
+            this.actualHash = hash
+            done()
+          }
+        )
+      })
+
+      it('should log a warning', function () {
+        expect(this.logger.warn).to.have.been.calledWith(
+          {
+            projectId: this.projectId,
+            fileId: this.file_id,
+            webHash: 'another-hash-from-web',
+            fileHash: this.hash,
+          },
+          'hash mismatch between web and project-history'
+        )
+      })
+
+      it('should request the file from the filestore in settings', function () {
+        expect(this.FetchUtils.fetchStream).to.have.been.calledWithMatch(
+          `${this.settings.apis.filestore.url}/project/${this.projectId}/file/${this.file_id}`
+        )
+      })
+
+      it('should call the callback with the blob', function () {
+        expect(this.actualHash).to.equal(this.hash)
+      })
+    })
+    describe('when the createdBlob flag is set on the update', function () {
+      beforeEach(function () {
+        this.file_id = '012345678901234567890123'
+        this.update = {
+          file: true,
+          createdBlob: true,
+          url: `http://filestore.other.cloud.provider/project/${this.projectId}/file/${this.file_id}`,
+          hash: this.hash,
+        }
+      })
+      describe('when history-v1 confirms that the blob exists', function () {
+        beforeEach(function (done) {
+          this.FetchUtils.fetchNothing.resolves()
+          this.HistoryStoreManager.createBlobForUpdate(
+            this.projectId,
+            this.historyId,
+            this.update,
+            (err, { file: hash }) => {
+              if (err) {
+                return done(err)
+              }
+              this.actualHash = hash
+              done()
+            }
+          )
+        })
+
+        it('should call the callback with the existing hash', function () {
+          expect(this.actualHash).to.equal(this.hash)
+        })
+
+        it('should not request the file from the filestore', function () {
+          expect(this.FetchUtils.fetchStream).to.not.have.been.called
+        })
+
+        it('should log a debug level message', function () {
+          expect(this.logger.debug).to.have.been.calledWith(
+            {
+              projectId: this.projectId,
+              fileId: this.file_id,
+              update: this.update,
+            },
+            'Skipping blob creation as it has already been created'
+          )
+        })
+      })
+      describe('when history-v1 does not confirm that the blob exists', function () {
+        beforeEach(function (done) {
+          this.FetchUtils.fetchNothing.rejects(
+            new RequestFailedError(
+              `${this.settings.overleaf.history.host}/project/${this.projectId}/file/${this.file_id}`,
+              { method: 'HEAD' },
+              { status: 404 }
+            )
+          )
+          this.HistoryStoreManager.createBlobForUpdate(
+            this.projectId,
+            this.historyId,
+            this.update,
+            (err, { file: hash }) => {
+              if (err) {
+                return done(err)
+              }
+              this.actualHash = hash
+              done()
+            }
+          )
+        })
+
+        it('should warn that we will use the filestore', function () {
+          expect(this.logger.warn).to.have.been.calledWithMatch(
+            {
+              fileId: this.file_id,
+              projectId: this.projectId,
+              update: this.update,
+            },
+            'created blob does not exist, reading from filestore'
+          )
+        })
+
+        it('should request the file from the filestore in settings', function () {
+          expect(this.FetchUtils.fetchStream).to.have.been.calledWithMatch(
+            `${this.settings.apis.filestore.url}/project/${this.projectId}/file/${this.file_id}`
+          )
+        })
+
+        it('should call the callback with the blob', function () {
+          expect(this.actualHash).to.equal(this.hash)
+        })
       })
     })
   })

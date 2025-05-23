@@ -9,20 +9,6 @@ import {
 } from '../fixtures/compile'
 import useFetchMock from '../hooks/use-fetch-mock'
 import { useMeta } from '../hooks/use-meta'
-import { SplitTestProvider } from '@/shared/context/split-test-context'
-import { UserProvider } from '@/shared/context/user-context'
-import { ProjectProvider } from '@/shared/context/project-context'
-import { FileTreeDataProvider } from '@/shared/context/file-tree-data-context'
-import { EditorProvider } from '@/shared/context/editor-context'
-import { DetachProvider } from '@/shared/context/detach-context'
-import { LayoutProvider } from '@/shared/context/layout-context'
-import { LocalCompileProvider } from '@/shared/context/local-compile-context'
-import { DetachCompileProvider } from '@/shared/context/detach-compile-context'
-import { ProjectSettingsProvider } from '@/features/editor-left-menu/context/project-settings-context'
-import { FileTreePathProvider } from '@/features/file-tree/contexts/file-tree-path'
-import { UserSettingsProvider } from '@/shared/context/user-settings-context'
-import { OutlineProvider } from '@/features/ide-react/context/outline-context'
-import { ChatProvider } from '@/features/chat/context/chat-context'
 import SocketIOShim, { SocketIOMock } from '@/ide/connection/SocketIoShim'
 import { IdeContext } from '@/shared/context/ide-context'
 import {
@@ -31,17 +17,10 @@ import {
 } from '@/features/ide-react/context/ide-react-context'
 import { IdeEventEmitter } from '@/features/ide-react/create-ide-event-emitter'
 import { ReactScopeEventEmitter } from '@/features/ide-react/scope-event-emitter/react-scope-event-emitter'
-import { ModalsContextProvider } from '@/features/ide-react/context/modals-context'
 import { ConnectionContext } from '@/features/ide-react/context/connection-context'
-import { EventLog } from '@/features/ide-react/editor/event-log'
-import { ReferencesProvider } from '@/features/ide-react/context/references-context'
-import { PermissionsProvider } from '@/features/ide-react/context/permissions-context'
 import { Socket } from '@/features/ide-react/connection/types/socket'
 import { ConnectionState } from '@/features/ide-react/connection/types/connection-state'
-import { EditorManagerProvider } from '@/features/ide-react/context/editor-manager-context'
-import { FileTreeOpenProvider } from '@/features/ide-react/context/file-tree-open-context'
-import { MetadataProvider } from '@/features/ide-react/context/metadata-context'
-import { OnlineUsersProvider } from '@/features/ide-react/context/online-users-context'
+import { ReactContextRoot } from '@/features/ide-react/context/react-context-root'
 
 const scopeWatchers: [string, (value: any) => void][] = []
 
@@ -73,7 +52,7 @@ const initialize = () => {
           { _id: 'test-file-id', name: 'testfile.tex' },
           { _id: 'test-bib-file-id', name: 'testsources.bib' },
         ],
-        fileRefs: [{ _id: 'test-image-id', name: 'frog.jpg' }],
+        fileRefs: [{ _id: 'test-image-id', name: 'frog.jpg', hash: '42' }],
         folders: [],
       },
     ],
@@ -97,11 +76,6 @@ const initialize = () => {
       //
     },
     $broadcast: () => {},
-    $root: {
-      _references: {
-        keys: ['bibkeyExample'],
-      },
-    },
     ui: {
       chatOpen: true,
       pdfLayout: 'flat',
@@ -115,6 +89,7 @@ const initialize = () => {
       sharejs_doc: {
         doc_id: 'test-doc',
         getSnapshot: () => 'some doc content',
+        hasBufferedOps: () => false,
       },
       open_doc_name: 'testfile.tex',
     },
@@ -127,102 +102,15 @@ const initialize = () => {
     socket: new SocketIOShim.SocketShimNoop(
       new SocketIOMock()
     ) as unknown as Socket,
-    editorManager: {
-      getCurrentDocId: () => 'foo',
-      openDoc: (id: string, options: unknown) => {
-        console.log('open doc', id, options)
-      },
-    },
-    metadataManager: {
-      metadata: {
-        state: {
-          documents: {
-            'test-file-id': { labels: ['sec:section-label'], packages: [] },
-          },
-        },
-      },
-    },
   }
 
-  window.user = user
-
-  window.ExposedSettings = {
-    adminEmail: 'placeholder@example.com',
-    appName: 'Overleaf',
-    cookieDomain: '.overleaf.stories',
-    dropboxAppName: 'Overleaf-Stories',
-    emailConfirmationDisabled: false,
-    enableSubscriptions: true,
-    hasAffiliationsFeature: false,
-    hasLinkUrlFeature: true,
-    hasLinkedProjectFileFeature: true,
-    hasLinkedProjectOutputFileFeature: true,
-    hasSamlFeature: true,
-    ieeeBrandId: 15,
-    isOverleaf: true,
-    labsEnabled: true,
-    maxEntitiesPerProject: 10,
-    maxUploadSize: 5 * 1024 * 1024,
-    recaptchaDisabled: {
-      invite: true,
-      login: true,
-      passwordReset: true,
-      register: true,
-      addEmail: true,
-    },
-    sentryAllowedOriginRegex: '',
-    siteUrl: 'http://localhost',
-    templateLinks: [],
-    textExtensions: [
-      'tex',
-      'latex',
-      'sty',
-      'cls',
-      'bst',
-      'bib',
-      'bibtex',
-      'txt',
-      'tikz',
-      'mtx',
-      'rtex',
-      'md',
-      'asy',
-      'lbx',
-      'bbx',
-      'cbx',
-      'm',
-      'lco',
-      'dtx',
-      'ins',
-      'ist',
-      'def',
-      'clo',
-      'ldf',
-      'rmd',
-      'lua',
-      'gv',
-      'mf',
-      'lhs',
-      'mk',
-      'xmpdata',
-      'cfg',
-      'rnw',
-      'ltx',
-      'inc',
-    ],
-    editableFilenames: ['latexmkrc', '.latexmkrc', 'makefile', 'gnumakefile'],
-    validRootDocExtensions: ['tex', 'Rtex', 'ltx', 'Rnw'],
-    fileIgnorePattern:
-      '**/{{__MACOSX,.git,.texpadtmp,.R}{,/**},.!(latexmkrc),*.{dvi,aux,log,toc,out,pdfsync,synctex,synctex(busy),fdb_latexmk,fls,nlo,ind,glo,gls,glg,bbl,blg,doc,docx,gz,swp}}',
-    projectUploadTimeout: 12000,
-  }
-
-  window.project_id = project._id
-
-  window.metaAttributesCache = window.metaAttributesCache ?? new Map()
+  // window.metaAttributesCache is reset in preview.tsx
   window.metaAttributesCache.set('ol-user', user)
-
-  window.gitBridgePublicBaseUrl = 'https://git.stories.com'
+  window.metaAttributesCache.set('ol-project_id', project._id)
+  window.metaAttributesCache.set(
+    'ol-gitBridgePublicBaseUrl',
+    'https://git.stories.com'
+  )
 
   window._ide = ide
 }
@@ -256,93 +144,24 @@ export const ScopeDecorator = (
   }, [])
 
   // set values on window.metaAttributesCache (created in initialize, above)
-  useMeta({
-    'ol-ExposedSettings': window.ExposedSettings,
-    ...meta,
-  })
-
-  const Providers = {
-    ChatProvider,
-    ConnectionProvider,
-    DetachCompileProvider,
-    DetachProvider,
-    EditorProvider,
-    EditorManagerProvider,
-    FileTreeDataProvider,
-    FileTreeOpenProvider,
-    FileTreePathProvider,
-    IdeReactProvider,
-    LayoutProvider,
-    LocalCompileProvider,
-    MetadataProvider,
-    ModalsContextProvider,
-    OnlineUsersProvider,
-    OutlineProvider,
-    PermissionsProvider,
-    ProjectProvider,
-    ProjectSettingsProvider,
-    ReferencesProvider,
-    SplitTestProvider,
-    UserProvider,
-    UserSettingsProvider,
-    ...opts.providers,
-  }
+  useMeta(meta)
 
   return (
-    <Providers.SplitTestProvider>
-      <Providers.ModalsContextProvider>
-        <Providers.ConnectionProvider>
-          <Providers.IdeReactProvider>
-            <Providers.UserProvider>
-              <Providers.UserSettingsProvider>
-                <Providers.ProjectProvider>
-                  <Providers.FileTreeDataProvider>
-                    <Providers.FileTreePathProvider>
-                      <Providers.ReferencesProvider>
-                        <Providers.DetachProvider>
-                          <Providers.EditorProvider>
-                            <Providers.PermissionsProvider>
-                              <Providers.ProjectSettingsProvider>
-                                <Providers.LayoutProvider>
-                                  <Providers.EditorManagerProvider>
-                                    <Providers.LocalCompileProvider>
-                                      <Providers.DetachCompileProvider>
-                                        <Providers.ChatProvider>
-                                          <Providers.FileTreeOpenProvider>
-                                            <Providers.OnlineUsersProvider>
-                                              <Providers.MetadataProvider>
-                                                <Providers.OutlineProvider>
-                                                  <Story />
-                                                </Providers.OutlineProvider>
-                                              </Providers.MetadataProvider>
-                                            </Providers.OnlineUsersProvider>
-                                          </Providers.FileTreeOpenProvider>
-                                        </Providers.ChatProvider>
-                                      </Providers.DetachCompileProvider>
-                                    </Providers.LocalCompileProvider>
-                                  </Providers.EditorManagerProvider>
-                                </Providers.LayoutProvider>
-                              </Providers.ProjectSettingsProvider>
-                            </Providers.PermissionsProvider>
-                          </Providers.EditorProvider>
-                        </Providers.DetachProvider>
-                      </Providers.ReferencesProvider>
-                    </Providers.FileTreePathProvider>
-                  </Providers.FileTreeDataProvider>
-                </Providers.ProjectProvider>
-              </Providers.UserSettingsProvider>
-            </Providers.UserProvider>
-          </Providers.IdeReactProvider>
-        </Providers.ConnectionProvider>
-      </Providers.ModalsContextProvider>
-    </Providers.SplitTestProvider>
+    <ReactContextRoot
+      providers={{
+        ConnectionProvider,
+        IdeReactProvider,
+        ...opts.providers,
+      }}
+    >
+      <Story />
+    </ReactContextRoot>
   )
 }
 
-const ConnectionProvider: FC = ({ children }) => {
-  const [value] = useState(() => ({
-    socket: window._ide.socket as Socket,
-    connectionState: {
+const ConnectionProvider: FC<React.PropsWithChildren> = ({ children }) => {
+  const [value] = useState(() => {
+    const connectionState: ConnectionState = {
       readyState: WebSocket.OPEN,
       forceDisconnected: false,
       inactiveDisconnect: false,
@@ -350,14 +169,30 @@ const ConnectionProvider: FC = ({ children }) => {
       forcedDisconnectDelay: 0,
       lastConnectionAttempt: 0,
       error: '',
-    } as ConnectionState,
-    isConnected: true,
-    isStillReconnecting: false,
-    secondsUntilReconnect: () => 0,
-    tryReconnectNow: () => {},
-    registerUserActivity: () => {},
-    disconnect: () => {},
-  }))
+    }
+    return {
+      socket: window._ide.socket as Socket,
+      connectionState,
+      isConnected: true,
+      isStillReconnecting: false,
+      secondsUntilReconnect: () => 0,
+      tryReconnectNow: () => {},
+      registerUserActivity: () => {},
+      closeConnection: () => {},
+      getSocketDebuggingInfo: () => ({
+        client_id: 'fakeClientId',
+        transport: 'fakeTransport',
+        publicId: 'fakePublicId',
+        lastUserActivity: 0,
+        connectionState,
+        externalHeartbeat: {
+          currentStart: 0,
+          lastSuccess: 0,
+          lastLatency: 0,
+        },
+      }),
+    }
+  })
 
   return (
     <ConnectionContext.Provider value={value}>
@@ -366,13 +201,13 @@ const ConnectionProvider: FC = ({ children }) => {
   )
 }
 
-const IdeReactProvider: FC = ({ children }) => {
+const IdeReactProvider: FC<React.PropsWithChildren> = ({ children }) => {
+  const projectId = 'project-123'
   const [startedFreeTrial, setStartedFreeTrial] = useState(false)
 
   const [ideReactContextValue] = useState(() => ({
-    projectId: 'project-123',
+    projectId,
     eventEmitter: new IdeEventEmitter(),
-    eventLog: new EventLog(),
     startedFreeTrial,
     setStartedFreeTrial,
     reportError: () => {},
@@ -381,7 +216,7 @@ const IdeReactProvider: FC = ({ children }) => {
 
   const [ideContextValue] = useState(() => {
     const ide = window._ide
-    const scopeStore = createReactScopeValueStore(window.project_id)
+    const scopeStore = createReactScopeValueStore(projectId)
     for (const [key, value] of Object.entries(ide.$scope)) {
       scopeStore.set(key, value)
     }

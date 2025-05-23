@@ -1,31 +1,26 @@
 import { FC } from 'react'
-import { Tag } from '../../../../../app/src/Features/Tags/types'
+import { Tag as TagType } from '../../../../../app/src/Features/Tags/types'
 import { getTagColor } from '@/features/project-list/util/tag'
-import Icon from '@/shared/components/icon'
-import { useTranslation } from 'react-i18next'
+import Tag from '@/features/ui/components/bootstrap-5/tag'
 
 export const CloneProjectTag: FC<{
-  tag: Tag
-  removeTag: (tag: Tag) => void
+  tag: TagType
+  removeTag: (tag: TagType) => void
 }> = ({ tag, removeTag }) => {
-  const { t } = useTranslation()
-
   return (
-    <div className="tag-label" role="option" aria-selected>
-      <span className="label label-default tag-label-name">
-        <span style={{ color: getTagColor(tag) }}>
-          <Icon type="circle" aria-hidden />
-        </span>{' '}
-        {tag.name}
-      </span>
-      <button
-        type="button"
-        className="label label-default tag-label-remove"
-        onClick={() => removeTag(tag)}
-        aria-label={t('remove_tag', { tagName: tag.name })}
-      >
-        <span aria-hidden="true">×</span>
-      </button>
-    </div>
+    <Tag
+      prepend={
+        <i
+          className="badge-tag-circle"
+          style={{ backgroundColor: getTagColor(tag) }}
+        />
+      }
+      closeBtnProps={{
+        onClick: () => removeTag(tag),
+      }}
+      className="ms-2 mb-2"
+    >
+      {tag.name}
+    </Tag>
   )
 }

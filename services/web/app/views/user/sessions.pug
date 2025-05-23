@@ -1,5 +1,8 @@
 extends ../layout-marketing
 
+block vars
+	- bootstrap5PageStatus = 'disabled'
+
 block content
 	main.content.content-alt#main-content
 		.container
@@ -64,6 +67,6 @@ block content
 								p.text-success.text-center
 									| #{translate('clear_sessions_success')}
 						.page-separator
-						a.btn.btn-secondary.text-capitalize(href='/user/settings') #{translate('back_to_account_settings')}
+						a.btn.btn-secondary(href='/user/settings') #{translate('back_to_account_settings')}
 						| 
-						a.btn.btn-secondary.text-capitalize(href='/project') #{translate('back_to_your_projects')}
+						a.btn.btn-secondary(href='/project') #{translate('back_to_your_projects')}

@@ -1,3 +1,9 @@
+const http = require('node:http')
+const https = require('node:https')
+
+http.globalAgent.keepAlive = false
+https.globalAgent.keepAlive = false
+
 module.exports = {
   internal: {
     documentupdater: {
@@ -128,6 +134,9 @@ module.exports = {
         projectState({ project_id: projectId }) {
           return `ProjectState:{${projectId}}`
         },
+        projectBlock({ project_id: projectId }) {
+          return `ProjectBlock:{${projectId}}`
+        },
         pendingUpdates({ doc_id: docId }) {
           return `PendingUpdates:{${docId}}`
         },
@@ -165,10 +174,6 @@ module.exports = {
     options: {
       monitorCommands: true,
     },
-  },
-
-  sentry: {
-    dsn: process.env.SENTRY_DSN,
   },
 
   publishOnIndividualChannels:

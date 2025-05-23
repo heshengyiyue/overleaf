@@ -1,20 +1,20 @@
-import { MouseEventHandler, useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from 'react-bootstrap'
-import { startFreeTrial } from '../../main/account-upgrade'
+import { startFreeTrial } from '@/main/account-upgrade'
 import * as eventTracking from '../../infrastructure/event-tracking'
+import OLButton from '@/features/ui/components/ol/ol-button'
 
 type StartFreeTrialButtonProps = {
   source: string
   variant?: string
-  buttonProps?: Button.ButtonProps
+  buttonProps?: React.ComponentProps<typeof OLButton>
   children?: React.ReactNode
-  handleClick?: MouseEventHandler<Button>
+  handleClick?: React.ComponentProps<typeof OLButton>['onClick']
 }
 
 export default function StartFreeTrialButton({
   buttonProps = {
-    bsStyle: 'info',
+    variant: 'secondary',
   },
   children,
   handleClick,
@@ -34,21 +34,21 @@ export default function StartFreeTrialButton({
   }, [source, variant])
 
   const onClick = useCallback(
-    event => {
+    (event: React.MouseEvent<HTMLButtonElement, MouseEvent>) => {
       event.preventDefault()
 
       if (handleClick) {
         handleClick(event)
       }
 
-      startFreeTrial(source, null, null, variant)
+      startFreeTrial(source, variant)
     },
     [handleClick, source, variant]
   )
 
   return (
-    <Button {...buttonProps} onClick={onClick}>
+    <OLButton {...buttonProps} onClick={onClick}>
       {children || t('start_free_trial')}
-    </Button>
+    </OLButton>
   )
 }

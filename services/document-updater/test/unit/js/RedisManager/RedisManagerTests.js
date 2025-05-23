@@ -1,7 +1,8 @@
 const sinon = require('sinon')
+const { expect } = require('chai')
 const SandboxedModule = require('sandboxed-module')
 const Errors = require('../../../../app/js/Errors')
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 const tk = require('timekeeper')
 
 const MODULE_PATH = '../../../../app/js/RedisManager.js'
@@ -53,6 +54,9 @@ describe('RedisManager', function () {
                 },
                 projectState({ project_id: projectId }) {
                   return `ProjectState:${projectId}`
+                },
+                projectBlock({ project_id: projectId }) {
+                  return `ProjectBlock:${projectId}`
                 },
                 unflushedTime({ doc_id: docId }) {
                   return `UnflushedTime:${docId}`
@@ -401,6 +405,18 @@ describe('RedisManager', function () {
         this.callback
           .calledWith(sinon.match.instanceOf(Errors.OpRangeNotAvailableError))
           .should.equal(true)
+      })
+
+      it('should send details for metrics', function () {
+        this.callback.should.have.been.calledWith(
+          sinon.match({
+            info: {
+              firstVersionInRedis: this.first_version_in_redis,
+              version: this.version,
+              ttlInS: this.RedisManager.DOC_OPS_TTL,
+            },
+          })
+        )
       })
 
       it('should log out the problem as a debug message', function () {
@@ -782,6 +798,8 @@ describe('RedisManager', function () {
       this.multi.mset = sinon.stub()
       this.multi.sadd = sinon.stub()
       this.multi.del = sinon.stub()
+      this.multi.exists = sinon.stub()
+      this.multi.exec.onCall(0).yields(null, [0])
       this.rclient.sadd = sinon.stub().yields()
       this.lines = ['one', 'two', 'three', 'これは']
       this.version = 42
@@ -825,7 +843,7 @@ describe('RedisManager', function () {
       })
 
       it('should add the docId to the project set', function () {
-        this.rclient.sadd
+        this.multi.sadd
           .calledWith(`DocsIn:${this.project_id}`, this.docId)
           .should.equal(true)
       })
@@ -973,6 +991,35 @@ describe('RedisManager', function () {
           `ResolvedCommentIds:${this.docId}`,
           ...this.resolvedCommentIds
         )
+      })
+    })
+
+    describe('when the project is blocked', function () {
+      beforeEach(function (done) {
+        this.multi.exec.onCall(0).yields(null, [1])
+        this.RedisManager.putDocInMemory(
+          this.project_id,
+          this.docId,
+          this.lines,
+          this.version,
+          this.ranges,
+          this.resolvedCommentIds,
+          this.pathname,
+          this.projectHistoryId,
+          this.historyRangesSupport,
+          err => {
+            this.error = err
+            done()
+          }
+        )
+      })
+
+      it('should throw an error', function () {
+        expect(this.error.message).to.equal('Project blocked from loading docs')
+      })
+
+      it('should not store the doc', function () {
+        expect(this.multi.mset).to.not.have.been.called
       })
     })
   })

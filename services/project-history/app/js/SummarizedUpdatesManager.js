@@ -252,6 +252,21 @@ function _shouldMergeUpdate(update, summarizedUpdate, labels) {
       if (update.meta.origin.kind !== summarizedUpdate.meta.origin.kind) {
         return false
       }
+      if (update.meta.origin.path !== summarizedUpdate.meta.origin.path) {
+        return false
+      }
+      if (
+        update.meta.origin.kind === 'file-restore' &&
+        update.meta.origin.timestamp !== summarizedUpdate.meta.origin.timestamp
+      ) {
+        return false
+      }
+      if (
+        update.meta.origin.kind === 'project-restore' &&
+        update.meta.origin.timestamp !== summarizedUpdate.meta.origin.timestamp
+      ) {
+        return false
+      }
     } else {
       return false
     }

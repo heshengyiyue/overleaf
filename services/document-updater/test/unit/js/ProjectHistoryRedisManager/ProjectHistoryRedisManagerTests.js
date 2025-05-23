@@ -162,12 +162,63 @@ describe('ProjectHistoryRedisManager', function () {
         },
         version: this.version,
         projectHistoryId: this.projectHistoryId,
+        createdBlob: false,
         doc: this.doc_id,
       }
 
       this.ProjectHistoryRedisManager.promises.queueOps
         .calledWithExactly(this.project_id, JSON.stringify(update))
         .should.equal(true)
+    })
+
+    it('should queue an update with file metadata', async function () {
+      const metadata = {
+        importedAt: '2024-07-30T09:14:45.928Z',
+        provider: 'references-provider',
+      }
+      const projectId = 'project-id'
+      const fileId = 'file-id'
+      const url = `http://filestore/project/${projectId}/file/${fileId}`
+      await this.ProjectHistoryRedisManager.promises.queueAddEntity(
+        projectId,
+        this.projectHistoryId,
+        'file',
+        fileId,
+        this.user_id,
+        {
+          pathname: 'foo.png',
+          url,
+          version: 42,
+          hash: '1337',
+          metadata,
+        },
+        this.source
+      )
+
+      const update = {
+        pathname: 'foo.png',
+        docLines: undefined,
+        url,
+        meta: {
+          user_id: this.user_id,
+          ts: new Date(),
+          source: this.source,
+        },
+        version: 42,
+        hash: '1337',
+        metadata,
+        projectHistoryId: this.projectHistoryId,
+        createdBlob: false,
+        file: fileId,
+      }
+
+      expect(
+        this.ProjectHistoryRedisManager.promises.queueOps.args[0][1]
+      ).to.equal(JSON.stringify(update))
+      this.ProjectHistoryRedisManager.promises.queueOps.should.have.been.calledWithExactly(
+        projectId,
+        JSON.stringify(update)
+      )
     })
 
     it('should forward history compatible ranges if history ranges support is enabled', async function () {
@@ -242,6 +293,7 @@ describe('ProjectHistoryRedisManager', function () {
         },
         version: this.version,
         projectHistoryId: this.projectHistoryId,
+        createdBlob: false,
         ranges: historyCompatibleRanges,
         doc: this.doc_id,
       }
@@ -294,6 +346,7 @@ describe('ProjectHistoryRedisManager', function () {
         },
         version: this.version,
         projectHistoryId: this.projectHistoryId,
+        createdBlob: false,
         doc: this.doc_id,
       }
 
@@ -345,6 +398,68 @@ describe('ProjectHistoryRedisManager', function () {
         },
         version: this.version,
         projectHistoryId: this.projectHistoryId,
+        createdBlob: false,
+        doc: this.doc_id,
+      }
+
+      this.ProjectHistoryRedisManager.promises.queueOps
+        .calledWithExactly(this.project_id, JSON.stringify(update))
+        .should.equal(true)
+    })
+
+    it('should pass "false" as the createdBlob field if not provided', async function () {
+      await this.ProjectHistoryRedisManager.promises.queueAddEntity(
+        this.project_id,
+        this.projectHistoryId,
+        'doc',
+        this.doc_id,
+        this.user_id,
+        this.rawUpdate,
+        this.source
+      )
+
+      const update = {
+        pathname: this.pathname,
+        docLines: this.docLines,
+        meta: {
+          user_id: this.user_id,
+          ts: new Date(),
+          source: this.source,
+        },
+        version: this.version,
+        projectHistoryId: this.projectHistoryId,
+        createdBlob: false,
+        doc: this.doc_id,
+      }
+
+      this.ProjectHistoryRedisManager.promises.queueOps
+        .calledWithExactly(this.project_id, JSON.stringify(update))
+        .should.equal(true)
+    })
+
+    it('should pass through the value of the createdBlob field', async function () {
+      this.rawUpdate.createdBlob = true
+      await this.ProjectHistoryRedisManager.promises.queueAddEntity(
+        this.project_id,
+        this.projectHistoryId,
+        'doc',
+        this.doc_id,
+        this.user_id,
+        this.rawUpdate,
+        this.source
+      )
+
+      const update = {
+        pathname: this.pathname,
+        docLines: this.docLines,
+        meta: {
+          user_id: this.user_id,
+          ts: new Date(),
+          source: this.source,
+        },
+        version: this.version,
+        projectHistoryId: this.projectHistoryId,
+        createdBlob: true,
         doc: this.doc_id,
       }
 

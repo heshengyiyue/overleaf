@@ -2,7 +2,7 @@ import sinon from 'sinon'
 import { expect } from 'chai'
 import mongodb from 'mongodb-legacy'
 import tk from 'timekeeper'
-import { Comment, TrackedChange, Range } from 'overleaf-editor-core'
+import { File, Comment, TrackedChange, Range } from 'overleaf-editor-core'
 import { strict as esmock } from 'esmock'
 const { ObjectId } = mongodb
 
@@ -114,7 +114,7 @@ describe('SyncManager', function () {
 
     this.SnapshotManager = {
       promises: {
-        getLatestSnapshot: sinon.stub(),
+        getLatestSnapshotFilesForChunk: sinon.stub(),
       },
     }
 
@@ -411,6 +411,39 @@ describe('SyncManager', function () {
         })
       })
 
+      it('records docs to resync when resyncProjectStructureOnly=true is not set', async function () {
+        const updates = [this.projectStructureSyncUpdate]
+        const { updates: filteredUpdates, syncState } =
+          await this.SyncManager.promises.skipUpdatesDuringSync(
+            this.projectId,
+            updates
+          )
+
+        expect(filteredUpdates).to.deep.equal([this.projectStructureSyncUpdate])
+        expect(syncState.toRaw()).to.deep.equal({
+          resyncProjectStructure: false,
+          resyncDocContents: ['new.tex'],
+          origin: { kind: 'history-resync' },
+        })
+      })
+
+      it('records no docs to resync with resyncProjectStructureOnly=true', async function () {
+        this.projectStructureSyncUpdate.resyncProjectStructureOnly = true
+        const updates = [this.projectStructureSyncUpdate]
+        const { updates: filteredUpdates, syncState } =
+          await this.SyncManager.promises.skipUpdatesDuringSync(
+            this.projectId,
+            updates
+          )
+
+        expect(filteredUpdates).to.deep.equal([this.projectStructureSyncUpdate])
+        expect(syncState.toRaw()).to.deep.equal({
+          resyncProjectStructure: false,
+          resyncDocContents: [],
+          origin: { kind: 'history-resync' },
+        })
+      })
+
       it('allow project structure updates after project structure sync update', async function () {
         const updates = [this.projectStructureSyncUpdate, this.renameUpdate]
         const { updates: filteredUpdates, syncState } =
@@ -491,27 +524,20 @@ describe('SyncManager', function () {
         path: '1.png',
         _hash: 'abcde',
       }
-      this.loadedSnapshotDoc = {
-        isEditable: sinon.stub().returns(true),
-        getContent: sinon.stub().returns(this.persistedDocContent),
-        getComments: sinon
-          .stub()
-          .returns({ toArray: sinon.stub().returns([]) }),
-        getTrackedChanges: sinon
-          .stub()
-          .returns({ asSorted: sinon.stub().returns([]) }),
-        getHash: sinon.stub().returns(null),
-      }
+      this.loadedSnapshotDoc = File.fromString(this.persistedDocContent)
+      this.mostRecentChunk = 'fake chunk'
       this.fileMap = {
         'main.tex': {
           isEditable: sinon.stub().returns(true),
           getContent: sinon.stub().returns(null),
           getHash: sinon.stub().returns(null),
           load: sinon.stub().resolves(this.loadedSnapshotDoc),
+          getMetadata: sinon.stub().returns({}),
         },
         '1.png': {
           isEditable: sinon.stub().returns(false),
           data: { hash: this.persistedFile._hash },
+          getMetadata: sinon.stub().returns({}),
         },
       }
       this.UpdateTranslator._convertPathname
@@ -525,7 +551,9 @@ describe('SyncManager', function () {
         .returns('another.tex')
       this.UpdateTranslator._convertPathname.withArgs('1.png').returns('1.png')
       this.UpdateTranslator._convertPathname.withArgs('2.png').returns('2.png')
-      this.SnapshotManager.promises.getLatestSnapshot.resolves(this.fileMap)
+      this.SnapshotManager.promises.getLatestSnapshotFilesForChunk.resolves(
+        this.fileMap
+      )
     })
 
     it('returns updates if no sync updates are queued', async function () {
@@ -533,13 +561,14 @@ describe('SyncManager', function () {
       const expandedUpdates = await this.SyncManager.promises.expandSyncUpdates(
         this.projectId,
         this.historyId,
+        this.mostRecentChunk,
         updates,
         this.extendLock
       )
 
       expect(expandedUpdates).to.equal(updates)
-      expect(this.SnapshotManager.promises.getLatestSnapshot).to.not.have.been
-        .called
+      expect(this.SnapshotManager.promises.getLatestSnapshotFilesForChunk).to
+        .not.have.been.called
       expect(this.extendLock).to.not.have.been.called
     })
 
@@ -555,6 +584,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -568,6 +598,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -592,6 +623,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -610,11 +642,12 @@ describe('SyncManager', function () {
         expect(this.extendLock).to.have.been.called
       })
 
-      it('queues file additions for missing files', async function () {
+      it('queues file additions for missing regular files', async function () {
         const newFile = {
           path: '2.png',
           file: {},
           url: 'filestore/2.png',
+          _hash: 'hash-42',
         }
         const updates = [
           resyncProjectStructureUpdate(
@@ -626,6 +659,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -635,6 +669,91 @@ describe('SyncManager', function () {
             pathname: newFile.path,
             file: newFile.file,
             url: newFile.url,
+            hash: 'hash-42',
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+        ])
+        expect(this.extendLock).to.have.been.called
+      })
+
+      it('queues file additions for missing regular files w/o url', async function () {
+        const newFile = {
+          path: '2.png',
+          file: {},
+          _hash: 'hash-42',
+          createdBlob: true,
+        }
+        const updates = [
+          resyncProjectStructureUpdate(
+            [this.persistedDoc],
+            [this.persistedFile, newFile]
+          ),
+        ]
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+
+        expect(expandedUpdates).to.deep.equal([
+          {
+            pathname: newFile.path,
+            file: newFile.file,
+            hash: 'hash-42',
+            createdBlob: true,
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+        ])
+        expect(this.extendLock).to.have.been.called
+      })
+
+      it('queues file additions for missing linked files', async function () {
+        const newFile = {
+          path: '2.png',
+          file: {},
+          url: 'filestore/2.png',
+          metadata: {
+            importedAt: '2024-07-30T09:14:45.928Z',
+            provider: 'references-provider',
+          },
+          _hash: 'hash-42',
+        }
+        const updates = [
+          resyncProjectStructureUpdate(
+            [this.persistedDoc],
+            [this.persistedFile, newFile]
+          ),
+        ]
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+
+        expect(expandedUpdates).to.deep.equal([
+          {
+            pathname: newFile.path,
+            file: newFile.file,
+            url: newFile.url,
+            hash: 'hash-42',
+            metadata: {
+              importedAt: '2024-07-30T09:14:45.928Z',
+              provider: 'references-provider',
+            },
             meta: {
               resync: true,
               ts: TIMESTAMP,
@@ -660,6 +779,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -696,6 +816,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -714,6 +835,190 @@ describe('SyncManager', function () {
             pathname: fileWichWasADoc.path,
             file: fileWichWasADoc.file,
             url: fileWichWasADoc.url,
+            hash: 'other-hash',
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+        ])
+        expect(this.extendLock).to.have.been.called
+      })
+
+      it('removes and re-adds linked-files if their binary state differs', async function () {
+        const fileWhichWasADoc = {
+          path: this.persistedDoc.path,
+          url: 'filestore/references.txt',
+          _hash: 'other-hash',
+          metadata: {
+            importedAt: '2024-07-30T09:14:45.928Z',
+            provider: 'references-provider',
+          },
+        }
+
+        const updates = [
+          resyncProjectStructureUpdate(
+            [],
+            [fileWhichWasADoc, this.persistedFile]
+          ),
+        ]
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+
+        expect(expandedUpdates).to.deep.equal([
+          {
+            pathname: fileWhichWasADoc.path,
+            new_pathname: '',
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+          {
+            pathname: fileWhichWasADoc.path,
+            file: fileWhichWasADoc.file,
+            url: fileWhichWasADoc.url,
+            hash: 'other-hash',
+            metadata: {
+              importedAt: '2024-07-30T09:14:45.928Z',
+              provider: 'references-provider',
+            },
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+        ])
+        expect(this.extendLock).to.have.been.called
+      })
+
+      it('add linked file data with same hash', async function () {
+        const nowLinkedFile = {
+          path: this.persistedFile.path,
+          url: 'filestore/1.png',
+          _hash: this.persistedFile._hash,
+          metadata: {
+            importedAt: '2024-07-30T09:14:45.928Z',
+            provider: 'image-provider',
+          },
+        }
+
+        const updates = [
+          resyncProjectStructureUpdate([this.persistedDoc], [nowLinkedFile]),
+        ]
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+
+        expect(expandedUpdates).to.deep.equal([
+          {
+            pathname: nowLinkedFile.path,
+            metadata: {
+              importedAt: '2024-07-30T09:14:45.928Z',
+              provider: 'image-provider',
+            },
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+        ])
+        expect(this.extendLock).to.have.been.called
+      })
+
+      it('updates linked file data when hash remains the same', async function () {
+        this.fileMap[this.persistedFile.path].getMetadata.returns({
+          importedAt: '2024-07-30T09:14:45.928Z',
+          provider: 'image-provider',
+        })
+        const updatedLinkedFile = {
+          path: this.persistedFile.path,
+          url: 'filestore/1.png',
+          _hash: this.persistedFile._hash,
+          metadata: {
+            importedAt: '2024-07-31T00:00:00.000Z',
+            provider: 'image-provider',
+          },
+        }
+
+        const updates = [
+          resyncProjectStructureUpdate(
+            [this.persistedDoc],
+            [updatedLinkedFile]
+          ),
+        ]
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+
+        expect(expandedUpdates).to.deep.equal([
+          {
+            pathname: updatedLinkedFile.path,
+            metadata: {
+              importedAt: '2024-07-31T00:00:00.000Z',
+              provider: 'image-provider',
+            },
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+        ])
+        expect(this.extendLock).to.have.been.called
+      })
+
+      it('remove linked file data', async function () {
+        this.fileMap[this.persistedFile.path].getMetadata.returns({
+          importedAt: '2024-07-30T09:14:45.928Z',
+          provider: 'image-provider',
+        })
+
+        const noLongerLinkedFile = {
+          path: this.persistedFile.path,
+          url: 'filestore/1.png',
+          _hash: this.persistedFile._hash,
+        }
+
+        const updates = [
+          resyncProjectStructureUpdate(
+            [this.persistedDoc],
+            [noLongerLinkedFile]
+          ),
+        ]
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+
+        expect(expandedUpdates).to.deep.equal([
+          {
+            pathname: noLongerLinkedFile.path,
+            metadata: {},
             meta: {
               resync: true,
               ts: TIMESTAMP,
@@ -740,6 +1045,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -768,6 +1074,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -793,6 +1100,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -811,6 +1119,54 @@ describe('SyncManager', function () {
             pathname: persistedFileWithNewContent.path,
             file: persistedFileWithNewContent.file,
             url: persistedFileWithNewContent.url,
+            hash: 'anotherhashvalue',
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+        ])
+        expect(this.extendLock).to.have.been.called
+      })
+
+      it('removes and re-adds binary files w/o url if they do not have same hash', async function () {
+        const persistedFileWithNewContent = {
+          _hash: 'anotherhashvalue',
+          hello: 'world',
+          path: '1.png',
+          createdBlob: true,
+        }
+        const updates = [
+          resyncProjectStructureUpdate(
+            [this.persistedDoc],
+            [persistedFileWithNewContent]
+          ),
+        ]
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+
+        expect(expandedUpdates).to.deep.equal([
+          {
+            pathname: persistedFileWithNewContent.path,
+            new_pathname: '',
+            meta: {
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+          {
+            pathname: persistedFileWithNewContent.path,
+            file: persistedFileWithNewContent.file,
+            hash: 'anotherhashvalue',
+            createdBlob: true,
             meta: {
               resync: true,
               ts: TIMESTAMP,
@@ -834,6 +1190,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -858,6 +1215,7 @@ describe('SyncManager', function () {
           this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -871,6 +1229,7 @@ describe('SyncManager', function () {
           this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -890,6 +1249,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -916,6 +1276,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -954,6 +1315,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -998,6 +1360,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1023,6 +1386,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1050,14 +1414,16 @@ describe('SyncManager', function () {
               [this.persistedDoc],
               [this.persistedFile]
             ),
-            docContentSyncUpdate(this.persistedDoc, 'a'),
+            docContentSyncUpdate(this.persistedDoc, 'the quick brown fox'),
           ]
-          this.loadedSnapshotDoc.getContent.returns('stored content')
-          this.UpdateCompressor.diffAsShareJsOps.returns([{ d: 'sdf', p: 1 }])
+          this.UpdateCompressor.diffAsShareJsOps.returns([
+            { d: ' jumps over the lazy dog', p: 19 },
+          ])
           this.expandedUpdates =
             await this.SyncManager.promises.expandSyncUpdates(
               this.projectId,
               this.historyId,
+              this.mostRecentChunk,
               updates,
               this.extendLock
             )
@@ -1067,10 +1433,10 @@ describe('SyncManager', function () {
           expect(this.expandedUpdates).to.deep.equal([
             {
               doc: this.persistedDoc.doc,
-              op: [{ d: 'sdf', p: 1 }],
+              op: [{ d: ' jumps over the lazy dog', p: 19 }],
               meta: {
                 pathname: this.persistedDoc.path,
-                doc_length: 'stored content'.length,
+                doc_length: this.persistedDocContent.length,
                 resync: true,
                 ts: TIMESTAMP,
                 origin: { kind: 'history-resync' },
@@ -1084,14 +1450,12 @@ describe('SyncManager', function () {
 
     describe('syncing comments', function () {
       beforeEach(function () {
-        this.loadedSnapshotDoc.getComments.returns({
-          toArray: sinon
-            .stub()
-            .returns([
-              new Comment('comment1', [new Range(4, 5)]),
-              new Comment('comment2', [new Range(10, 5)], true),
-            ]),
-        })
+        this.loadedSnapshotDoc
+          .getComments()
+          .add(new Comment('comment1', [new Range(4, 5)]))
+        this.loadedSnapshotDoc
+          .getComments()
+          .add(new Comment('comment2', [new Range(10, 5)], true))
         this.comments = [
           makeComment('comment1', 4, 'quick'),
           makeComment('comment2', 10, 'brown'),
@@ -1114,6 +1478,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1136,6 +1501,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1179,6 +1545,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1213,6 +1580,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1256,6 +1624,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1288,11 +1657,12 @@ describe('SyncManager', function () {
       })
 
       it('treats zero length comments as detached comments', async function () {
-        this.loadedSnapshotDoc.getComments.returns({
-          toArray: sinon.stub().returns([new Comment('comment1', [])]),
-        })
-        this.comments = [makeComment('comment1', 16, '')]
-        this.resolvedCommentIds = []
+        this.loadedSnapshotDoc.getComments().add(new Comment('comment1', []))
+        this.comments = [
+          makeComment('comment1', 16, ''),
+          makeComment('comment2', 10, 'brown'),
+        ]
+        this.resolvedCommentIds = ['comment2']
 
         const updates = [
           docContentSyncUpdate(
@@ -1309,40 +1679,109 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
 
         expect(expandedUpdates).to.deep.equal([])
       })
+
+      it('adjusts comment positions when the underlying text has changed', async function () {
+        const updates = [
+          docContentSyncUpdate(
+            this.persistedDoc,
+            'quick brown fox',
+            {
+              comments: [
+                makeComment('comment1', 0, 'quick'),
+                makeComment('comment2', 12, 'fox'),
+              ],
+            },
+            this.resolvedCommentIds
+          ),
+        ]
+        this.UpdateCompressor.diffAsShareJsOps.returns([
+          { d: 'the ', p: 0 },
+          { d: ' jumps over the lazy dog', p: 15 },
+        ])
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+        expect(expandedUpdates).to.deep.equal([
+          {
+            doc: this.persistedDoc.doc,
+            op: [
+              { d: 'the ', p: 0 },
+              { d: ' jumps over the lazy dog', p: 15 },
+            ],
+            meta: {
+              pathname: this.persistedDoc.path,
+              doc_length: this.persistedDocContent.length,
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
+            },
+          },
+          {
+            doc: this.persistedDoc.doc,
+            op: [
+              {
+                c: 'fox',
+                p: 12,
+                t: 'comment2',
+                resolved: true,
+              },
+            ],
+            meta: {
+              origin: {
+                kind: 'history-resync',
+              },
+              pathname: this.persistedDoc.path,
+              resync: true,
+              ts: TIMESTAMP,
+              doc_length: 'quick brown fox'.length,
+            },
+          },
+        ])
+      })
     })
 
     describe('syncing tracked changes', function () {
       beforeEach(function () {
-        this.loadedSnapshotDoc.getTrackedChanges.returns({
-          asSorted: sinon.stub().returns([
-            new TrackedChange(new Range(4, 6), {
-              type: 'delete',
-              userId: USER_ID,
-              ts: new Date(TIMESTAMP),
-            }),
-            new TrackedChange(new Range(10, 6), {
-              type: 'insert',
-              userId: USER_ID,
-              ts: new Date(TIMESTAMP),
-            }),
-            new TrackedChange(new Range(20, 6), {
-              type: 'delete',
-              userId: USER_ID,
-              ts: new Date(TIMESTAMP),
-            }),
-            new TrackedChange(new Range(40, 3), {
-              type: 'insert',
-              userId: USER_ID,
-              ts: new Date(TIMESTAMP),
-            }),
-          ]),
-        })
+        this.loadedSnapshotDoc.getTrackedChanges().add(
+          new TrackedChange(new Range(4, 6), {
+            type: 'delete',
+            userId: USER_ID,
+            ts: new Date(TIMESTAMP),
+          })
+        )
+        this.loadedSnapshotDoc.getTrackedChanges().add(
+          new TrackedChange(new Range(10, 6), {
+            type: 'insert',
+            userId: USER_ID,
+            ts: new Date(TIMESTAMP),
+          })
+        )
+        this.loadedSnapshotDoc.getTrackedChanges().add(
+          new TrackedChange(new Range(20, 6), {
+            type: 'delete',
+            userId: USER_ID,
+            ts: new Date(TIMESTAMP),
+          })
+        )
+        this.loadedSnapshotDoc.getTrackedChanges().add(
+          new TrackedChange(new Range(40, 3), {
+            type: 'insert',
+            userId: USER_ID,
+            ts: new Date(TIMESTAMP),
+          })
+        )
         this.changes = [
           makeTrackedChange('td1', { p: 4, d: 'quick ' }),
           makeTrackedChange('ti1', { p: 4, hpos: 10, i: 'brown ' }),
@@ -1361,6 +1800,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1382,6 +1822,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1423,6 +1864,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1464,6 +1906,7 @@ describe('SyncManager', function () {
           await this.SyncManager.promises.expandSyncUpdates(
             this.projectId,
             this.historyId,
+            this.mostRecentChunk,
             updates,
             this.extendLock
           )
@@ -1511,6 +1954,51 @@ describe('SyncManager', function () {
               resync: true,
               ts: TIMESTAMP,
               doc_length: this.persistedDocContent.length,
+            },
+          },
+        ])
+      })
+
+      it('adjusts tracked change positions when the underlying text has changed', async function () {
+        const updates = [
+          docContentSyncUpdate(
+            this.persistedDoc,
+            'every fox jumps over the lazy dog',
+            {
+              changes: [
+                makeTrackedChange('ti1', { p: 5, i: ' ' }), // the space after every is still a tracked insert
+                makeTrackedChange('td2', { p: 10, d: 'jumps ' }),
+                makeTrackedChange('ti2', { p: 24, hpos: 30, i: 'dog' }),
+              ],
+            },
+            this.resolvedCommentIds
+          ),
+        ]
+        this.UpdateCompressor.diffAsShareJsOps.returns([
+          { d: 'the quick brown', p: 0 },
+          { i: 'every', p: 0 },
+        ])
+        const expandedUpdates =
+          await this.SyncManager.promises.expandSyncUpdates(
+            this.projectId,
+            this.historyId,
+            this.mostRecentChunk,
+            updates,
+            this.extendLock
+          )
+        expect(expandedUpdates).to.deep.equal([
+          {
+            doc: this.persistedDoc.doc,
+            op: [
+              { d: 'the quick brown', p: 0 },
+              { i: 'every', p: 0 },
+            ],
+            meta: {
+              pathname: this.persistedDoc.path,
+              doc_length: this.persistedDocContent.length,
+              resync: true,
+              ts: TIMESTAMP,
+              origin: { kind: 'history-resync' },
             },
           },
         ])

@@ -21,6 +21,12 @@ const GroupPolicySchema = new Schema(
 
     // User can't have other third-party SSO (e.g. ORCID/IEEE) active on their account, nor can they link it to their account
     userCannotHaveOtherThirdPartySSO: Boolean,
+
+    // User can't use any of our AI features, such as the compile-assistant
+    userCannotUseAIFeatures: Boolean,
+
+    // User can't use the chat feature
+    userCannotUseChat: Boolean,
   },
   { minimize: false }
 )

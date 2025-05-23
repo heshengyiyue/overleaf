@@ -6,7 +6,8 @@ const modulePath = path.join(
   '../../../../app/src/Features/TokenAccess/TokenAccessHandler'
 )
 const { expect } = require('chai')
-const { ObjectId } = require('mongodb')
+const { ObjectId } = require('mongodb-legacy')
+const PrivilegeLevels = require('../../../../app/src/Features/Authorization/PrivilegeLevels')
 
 describe('TokenAccessHandler', function () {
   beforeEach(function () {
@@ -21,7 +22,7 @@ describe('TokenAccessHandler', function () {
     this.req = {}
     this.TokenAccessHandler = SandboxedModule.require(modulePath, {
       requires: {
-        mongodb: { ObjectId },
+        'mongodb-legacy': { ObjectId },
         '../../models/Project': { Project: (this.Project = {}) },
         '@overleaf/metrics': (this.Metrics = { inc: sinon.stub() }),
         '@overleaf/settings': (this.settings = {}),
@@ -115,7 +116,8 @@ describe('TokenAccessHandler', function () {
     it('should call Project.updateOne', async function () {
       await this.TokenAccessHandler.promises.addReadOnlyUserToProject(
         this.userId,
-        this.projectId
+        this.projectId,
+        this.project.owner_ref
       )
       expect(this.Project.updateOne.callCount).to.equal(1)
       expect(
@@ -130,7 +132,13 @@ describe('TokenAccessHandler', function () {
         this.Analytics.recordEventForUserInBackground,
         this.userId,
         'project-joined',
-        { mode: 'read-only' }
+        {
+          mode: 'view',
+          role: PrivilegeLevels.READ_ONLY,
+          projectId: this.projectId.toString(),
+          ownerId: this.project.owner_ref.toString(),
+          source: 'link-sharing',
+        }
       )
     })
 
@@ -152,7 +160,7 @@ describe('TokenAccessHandler', function () {
     })
   })
 
-  describe('addReadAndWriteUserToProject', function () {
+  describe('removeReadAndWriteUserFromProject', function () {
     beforeEach(function () {
       this.Project.updateOne = sinon
         .stub()
@@ -160,7 +168,7 @@ describe('TokenAccessHandler', function () {
     })
 
     it('should call Project.updateOne', async function () {
-      await this.TokenAccessHandler.promises.addReadAndWriteUserToProject(
+      await this.TokenAccessHandler.promises.removeReadAndWriteUserFromProject(
         this.userId,
         this.projectId
       )
@@ -171,32 +179,37 @@ describe('TokenAccessHandler', function () {
           _id: this.projectId,
         })
       ).to.equal(true)
-      expect(this.Project.updateOne.lastCall.args[1].$addToSet).to.have.keys(
+      expect(this.Project.updateOne.lastCall.args[1].$pull).to.have.keys(
         'tokenAccessReadAndWrite_refs'
       )
-      sinon.assert.calledWith(
-        this.Analytics.recordEventForUserInBackground,
-        this.userId,
-        'project-joined',
-        { mode: 'read-write' }
-      )
+    })
+  })
+
+  describe('moveReadAndWriteUserToReadOnly', function () {
+    beforeEach(function () {
+      this.Project.updateOne = sinon
+        .stub()
+        .returns({ exec: sinon.stub().resolves(null) })
     })
 
-    describe('when Project.updateOne produces an error', function () {
-      beforeEach(function () {
-        this.Project.updateOne = sinon
-          .stub()
-          .returns({ exec: sinon.stub().rejects(new Error('woops')) })
-      })
+    it('should call Project.updateOne', async function () {
+      await this.TokenAccessHandler.promises.moveReadAndWriteUserToReadOnly(
+        this.userId,
+        this.projectId
+      )
 
-      it('should produce an error', async function () {
-        await expect(
-          this.TokenAccessHandler.promises.addReadAndWriteUserToProject(
-            this.userId,
-            this.projectId
-          )
-        ).to.be.rejected
-      })
+      expect(this.Project.updateOne.callCount).to.equal(1)
+      expect(
+        this.Project.updateOne.calledWith({
+          _id: this.projectId,
+        })
+      ).to.equal(true)
+      expect(this.Project.updateOne.lastCall.args[1].$pull).to.have.keys(
+        'tokenAccessReadAndWrite_refs'
+      )
+      expect(this.Project.updateOne.lastCall.args[1].$addToSet).to.have.keys(
+        'tokenAccessReadOnly_refs'
+      )
     })
   })
 

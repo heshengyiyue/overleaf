@@ -13,7 +13,7 @@ describe('<FileTreeDoc/>', function () {
     )
 
     cy.findByRole('treeitem', { selected: false })
-    cy.get('i.linked-file-highlight').should('not.exist')
+    cy.get('.linked-file-highlight').should('not.exist')
   })
 
   it('renders selected', function () {
@@ -49,7 +49,7 @@ describe('<FileTreeDoc/>', function () {
     )
 
     cy.findByRole('treeitem')
-    cy.get('i.linked-file-highlight')
+    cy.get('.linked-file-highlight')
   })
 
   it('multi-selects', function () {

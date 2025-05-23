@@ -18,67 +18,64 @@ import getMeta from '../../utils/meta'
 import { useUserContext } from './user-context'
 import { saveProjectSettings } from '@/features/editor-left-menu/utils/api'
 import { PermissionsLevel } from '@/features/ide-react/types/permissions'
-
-type writefullAdButtons = '' | 'try-it' | 'log-in'
+import { useModalsContext } from '@/features/ide-react/context/modals-context'
+import { WritefullAPI } from './types/writefull-instance'
+import { Cobranding } from '../../../../types/cobranding'
+import { SymbolWithCharacter } from '../../../../modules/symbol-palette/frontend/js/data/symbols'
 
 export const EditorContext = createContext<
   | {
-      cobranding?: {
-        logoImgUrl: string
-        brandVariationName: string
-        brandVariationId: number
-        brandId: number
-        brandVariationHomeUrl: string
-        publishGuideHtml?: string
-        partner?: string
-        brandedMenu?: boolean
-        submitBtnHtml?: string
-      }
+      cobranding?: Cobranding
       hasPremiumCompile?: boolean
-      loading?: boolean
       renameProject: (newName: string) => void
       setPermissionsLevel: (permissionsLevel: PermissionsLevel) => void
       showSymbolPalette?: boolean
       toggleSymbolPalette?: () => void
-      insertSymbol?: (symbol: string) => void
+      insertSymbol?: (symbol: SymbolWithCharacter) => void
       isProjectOwner: boolean
       isRestrictedTokenMember?: boolean
-      permissionsLevel: 'readOnly' | 'readAndWrite' | 'owner'
+      isPendingEditor: boolean
+      permissionsLevel: PermissionsLevel
       deactivateTutorial: (tutorial: string) => void
-      inactiveTutorials: [string]
+      inactiveTutorials: string[]
       currentPopup: string | null
       setCurrentPopup: Dispatch<SetStateAction<string | null>>
-      writefullAdClicked: writefullAdButtons
-      setWritefullAdClicked: Dispatch<SetStateAction<writefullAdButtons>>
       setOutOfSync: (value: boolean) => void
+      hasPremiumSuggestion: boolean
+      setHasPremiumSuggestion: (value: boolean) => void
+      setPremiumSuggestionResetDate: (date: Date) => void
+      premiumSuggestionResetDate: Date
+      writefullInstance: WritefullAPI | null
+      setWritefullInstance: (instance: WritefullAPI) => void
     }
   | undefined
 >(undefined)
 
-export const EditorProvider: FC = ({ children }) => {
-  const ide = useIdeContext()
-  const { id: userId } = useUserContext()
+export const EditorProvider: FC<React.PropsWithChildren> = ({ children }) => {
+  const { socket } = useIdeContext()
+  const { id: userId, featureUsage } = useUserContext()
   const { role } = useDetachContext()
+  const { showGenericMessageModal } = useModalsContext()
 
-  const { owner, features, _id: projectId } = useProjectContext()
+  const { owner, features, _id: projectId, members } = useProjectContext()
 
   const cobranding = useMemo(() => {
+    const brandVariation = getMeta('ol-brandVariation')
     return (
-      window.brandVariation && {
-        logoImgUrl: window.brandVariation.logo_url,
-        brandVariationName: window.brandVariation.name,
-        brandVariationId: window.brandVariation.id,
-        brandId: window.brandVariation.brand_id,
-        brandVariationHomeUrl: window.brandVariation.home_url,
-        publishGuideHtml: window.brandVariation.publish_guide_html,
-        partner: window.brandVariation.partner,
-        brandedMenu: window.brandVariation.branded_menu,
-        submitBtnHtml: window.brandVariation.submit_button_html,
+      brandVariation && {
+        logoImgUrl: brandVariation.logo_url,
+        brandVariationName: brandVariation.name,
+        brandVariationId: brandVariation.id,
+        brandId: brandVariation.brand_id,
+        brandVariationHomeUrl: brandVariation.home_url,
+        publishGuideHtml: brandVariation.publish_guide_html,
+        partner: brandVariation.partner,
+        brandedMenu: brandVariation.branded_menu,
+        submitBtnHtml: brandVariation.submit_button_html,
       }
     )
   }, [])
 
-  const [loading] = useScopeValue('state.loading')
   const [projectName, setProjectName] = useScopeValue('project.name')
   const [permissionsLevel, setPermissionsLevel] =
     useScopeValue('permissionsLevel')
@@ -86,29 +83,49 @@ export const EditorProvider: FC = ({ children }) => {
   const [showSymbolPalette] = useScopeValue('editor.showSymbolPalette')
   const [toggleSymbolPalette] = useScopeValue('editor.toggleSymbolPalette')
 
-  const [inactiveTutorials, setInactiveTutorials] = useState(() =>
-    getMeta('ol-inactiveTutorials', [])
+  const [inactiveTutorials, setInactiveTutorials] = useState(
+    () => getMeta('ol-inactiveTutorials') || []
   )
 
-  const [writefullAdClicked, setWritefullAdClicked] =
-    useState<writefullAdButtons>('')
-
   const [currentPopup, setCurrentPopup] = useState<string | null>(null)
+  const [hasPremiumSuggestion, setHasPremiumSuggestion] = useState<boolean>(
+    () => {
+      return Boolean(
+        featureUsage?.aiErrorAssistant &&
+          featureUsage?.aiErrorAssistant.remainingUsage > 0
+      )
+    }
+  )
+  const [premiumSuggestionResetDate, setPremiumSuggestionResetDate] =
+    useState<Date>(() => {
+      return featureUsage?.aiErrorAssistant?.resetDate
+        ? new Date(featureUsage.aiErrorAssistant.resetDate)
+        : new Date()
+    })
+
+  const isPendingEditor = useMemo(
+    () =>
+      members?.some(
+        member =>
+          member._id === userId &&
+          (member.pendingEditor || member.pendingReviewer)
+      ),
+    [members, userId]
+  )
 
   const deactivateTutorial = useCallback(
-    tutorialKey => {
+    (tutorialKey: string) => {
       setInactiveTutorials([...inactiveTutorials, tutorialKey])
     },
     [inactiveTutorials]
   )
 
   useEffect(() => {
-    if (ide?.socket) {
-      ide.socket.on('projectNameUpdated', setProjectName)
-      return () =>
-        ide.socket.removeListener('projectNameUpdated', setProjectName)
+    if (socket) {
+      socket.on('projectNameUpdated', setProjectName)
+      return () => socket.removeListener('projectNameUpdated', setProjectName)
     }
-  }, [ide?.socket, setProjectName])
+  }, [socket, setProjectName])
 
   const renameProject = useCallback(
     (newName: string) => {
@@ -118,24 +135,18 @@ export const EditorProvider: FC = ({ children }) => {
             (response: any) => {
               setProjectName(oldName)
               const { data, status } = response
-              if (status === 400) {
-                return ide.showGenericMessageModal(
-                  'Error renaming project',
-                  data
-                )
-              } else {
-                return ide.showGenericMessageModal(
-                  'Error renaming project',
-                  'Please try again in a moment'
-                )
-              }
+
+              showGenericMessageModal(
+                'Error renaming project',
+                status === 400 ? data : 'Please try again in a moment'
+              )
             }
           )
         }
         return newName
       })
     },
-    [ide, setProjectName, projectId]
+    [setProjectName, projectId, showGenericMessageModal]
   )
 
   const { setTitle } = useBrowserWindow()
@@ -152,14 +163,14 @@ export const EditorProvider: FC = ({ children }) => {
     }
 
     parts.push('Online LaTeX Editor')
-    parts.push(window.ExposedSettings.appName)
+    parts.push(getMeta('ol-ExposedSettings').appName)
 
     const title = parts.join(' ')
 
     setTitle(title)
   }, [projectName, setTitle, role])
 
-  const insertSymbol = useCallback((symbol: string) => {
+  const insertSymbol = useCallback((symbol: SymbolWithCharacter) => {
     window.dispatchEvent(
       new CustomEvent('editor:insert-symbol', {
         detail: symbol,
@@ -167,16 +178,19 @@ export const EditorProvider: FC = ({ children }) => {
     )
   }, [])
 
+  const [writefullInstance, setWritefullInstance] =
+    useState<WritefullAPI | null>(null)
+
   const value = useMemo(
     () => ({
       cobranding,
       hasPremiumCompile: features?.compileGroup === 'priority',
-      loading,
       renameProject,
       permissionsLevel: outOfSync ? 'readOnly' : permissionsLevel,
       setPermissionsLevel,
       isProjectOwner: owner?._id === userId,
       isRestrictedTokenMember: getMeta('ol-isRestrictedTokenMember'),
+      isPendingEditor,
       showSymbolPalette,
       toggleSymbolPalette,
       insertSymbol,
@@ -184,19 +198,23 @@ export const EditorProvider: FC = ({ children }) => {
       deactivateTutorial,
       currentPopup,
       setCurrentPopup,
-      writefullAdClicked,
-      setWritefullAdClicked,
       setOutOfSync,
+      hasPremiumSuggestion,
+      setHasPremiumSuggestion,
+      premiumSuggestionResetDate,
+      setPremiumSuggestionResetDate,
+      writefullInstance,
+      setWritefullInstance,
     }),
     [
       cobranding,
       features?.compileGroup,
       owner,
       userId,
-      loading,
       renameProject,
       permissionsLevel,
       setPermissionsLevel,
+      isPendingEditor,
       showSymbolPalette,
       toggleSymbolPalette,
       insertSymbol,
@@ -204,10 +222,14 @@ export const EditorProvider: FC = ({ children }) => {
       deactivateTutorial,
       currentPopup,
       setCurrentPopup,
-      writefullAdClicked,
-      setWritefullAdClicked,
       outOfSync,
       setOutOfSync,
+      hasPremiumSuggestion,
+      setHasPremiumSuggestion,
+      premiumSuggestionResetDate,
+      setPremiumSuggestionResetDate,
+      writefullInstance,
+      setWritefullInstance,
     ]
   )
 

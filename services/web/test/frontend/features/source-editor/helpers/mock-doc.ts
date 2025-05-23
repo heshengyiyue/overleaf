@@ -33,7 +33,7 @@ ${content}
 const contentLines = Array.from(Array(100), (e, i) => `contentLine ${i}`)
 const defaultContent = mockDocContent(contentLines.join('\n'))
 
-const MAX_DOC_LENGTH = 2 * 1024 * 1024 // window.maxDocLength
+const MAX_DOC_LENGTH = 2 * 1024 * 1024 // ol-maxDocLength
 
 class MockShareDoc extends EventEmitter {
   constructor(public text: string) {
@@ -53,7 +53,10 @@ class MockShareDoc extends EventEmitter {
   }
 }
 
-export const mockDoc = (content = defaultContent) => {
+export const mockDoc = (
+  content = defaultContent,
+  { rangesOptions = {} } = {}
+) => {
   const mockShareJSDoc: ShareDoc = new MockShareDoc(content)
 
   return {
@@ -78,11 +81,30 @@ export const mockDoc = (content = defaultContent) => {
       comments: [],
       getIdSeed: () => '123',
       setIdSeed: () => {},
+      getTrackedDeletesLength: () => 0,
+      getDirtyState: () => ({
+        comment: {
+          moved: {},
+          removed: {},
+          added: {},
+        },
+        change: {
+          moved: {},
+          removed: {},
+          added: {},
+        },
+      }),
+      resetDirtyState: () => {},
+      removeCommentId: () => {},
+      ...rangesOptions,
     },
+    submitOp: (op: any) => {},
     setTrackChangesIdSeeds: () => {},
     getTrackingChanges: () => true,
     setTrackingChanges: () => {},
     getInflightOp: () => null,
     getPendingOp: () => null,
+    hasBufferedOps: () => false,
+    leaveAndCleanUpPromise: () => false,
   }
 }

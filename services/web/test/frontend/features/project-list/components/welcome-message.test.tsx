@@ -1,21 +1,15 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import WelcomeMessage from '../../../../../frontend/js/features/project-list/components/welcome-message'
 import { expect } from 'chai'
-import { ExposedSettings } from '../../../../../types/exposed-settings'
+import getMeta from '@/utils/meta'
 
 describe('<WelcomeMessage />', function () {
-  const exposedSettings: Partial<ExposedSettings> = {}
-
   beforeEach(function () {
-    window.metaAttributesCache = new Map()
-    window.metaAttributesCache.set('ol-ExposedSettings', exposedSettings)
-    exposedSettings.isOverleaf = true
-    exposedSettings.wikiEnabled = true
-    exposedSettings.templatesEnabled = true
-  })
-
-  afterEach(function () {
-    window.metaAttributesCache = new Map()
+    Object.assign(getMeta('ol-ExposedSettings'), {
+      isOverleaf: true,
+      wikiEnabled: true,
+      templatesEnabled: true,
+    })
   })
 
   it('renders welcome page correctly', function () {
@@ -36,9 +30,9 @@ describe('<WelcomeMessage />', function () {
 
     fireEvent.click(button)
 
-    screen.getByText('Blank Project')
-    screen.getByText('Example Project')
-    screen.getByText('Upload Project')
+    screen.getByText('Blank project')
+    screen.getByText('Example project')
+    screen.getByText('Upload project')
     screen.getByText('Import from GitHub')
   })
 
@@ -58,16 +52,16 @@ describe('<WelcomeMessage />', function () {
 
     fireEvent.click(button)
     // static menu
-    screen.getByText('Blank Project')
-    screen.getByText('Example Project')
-    screen.getByText('Upload Project')
+    screen.getByText('Blank project')
+    screen.getByText('Example project')
+    screen.getByText('Upload project')
     screen.getByText('Import from GitHub')
 
     // static text for institution templates
     screen.getByText('Institution Templates')
 
     // dynamic menu based on portalTemplates
-    const affiliationTemplate = screen.getByRole('link', {
+    const affiliationTemplate = screen.getByRole('menuitem', {
       name: 'Affiliation 1',
     })
 
@@ -85,9 +79,9 @@ describe('<WelcomeMessage />', function () {
 
     fireEvent.click(button)
 
-    screen.getByText('Blank Project')
-    screen.getByText('Example Project')
-    screen.getByText('Upload Project')
+    screen.getByText('Blank project')
+    screen.getByText('Example project')
+    screen.getByText('Upload project')
     screen.getByText('Import from GitHub')
   })
 
@@ -115,7 +109,7 @@ describe('<WelcomeMessage />', function () {
 
   describe('when not in SaaS', function () {
     beforeEach(function () {
-      exposedSettings.isOverleaf = false
+      getMeta('ol-ExposedSettings').isOverleaf = false
     })
 
     it('renders welcome page correctly', function () {
@@ -136,21 +130,21 @@ describe('<WelcomeMessage />', function () {
 
       fireEvent.click(button)
 
-      screen.getByText('Blank Project')
-      screen.getByText('Example Project')
-      screen.getByText('Upload Project')
+      screen.getByText('Blank project')
+      screen.getByText('Example project')
+      screen.getByText('Upload project')
       expect(screen.queryByText('Import from GitHub')).to.not.exist
     })
 
     it('does not render the tutorial link when the learn wiki is not configured', function () {
-      exposedSettings.wikiEnabled = false
+      getMeta('ol-ExposedSettings').wikiEnabled = false
       render(<WelcomeMessage />)
 
       expect(screen.queryByText('Learn LaTeX with a tutorial')).to.not.exist
     })
 
     it('does not render the templates link when templates are not configured', function () {
-      exposedSettings.templatesEnabled = false
+      getMeta('ol-ExposedSettings').templatesEnabled = false
       render(<WelcomeMessage />)
 
       expect(screen.queryByText('Browse templates')).to.not.exist

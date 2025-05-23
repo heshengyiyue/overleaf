@@ -7,6 +7,8 @@ import {
   useMemo,
   useRef,
   useState,
+  Dispatch,
+  SetStateAction,
 } from 'react'
 import useScopeValue from '../hooks/use-scope-value'
 import useScopeValueSetterOnly from '../hooks/use-scope-value-setter-only'
@@ -22,20 +24,34 @@ import {
 import {
   buildLogEntryAnnotations,
   buildRuleCounts,
+  buildRuleDeltas,
   handleLogFiles,
   handleOutputFiles,
 } from '../../features/pdf-preview/util/output-files'
-import { useIdeContext } from './ide-context'
 import { useProjectContext } from './project-context'
 import { useEditorContext } from './editor-context'
 import { buildFileList } from '../../features/pdf-preview/util/file-list'
 import { useLayoutContext } from './layout-context'
 import { useUserContext } from './user-context'
 import { useFileTreeData } from '@/shared/context/file-tree-data-context'
+import { useDetachContext } from '@/shared/context/detach-context'
 import { useFileTreePathContext } from '@/features/file-tree/contexts/file-tree-path'
 import { useUserSettingsContext } from '@/shared/context/user-settings-context'
 import { useFeatureFlag } from '@/shared/context/split-test-context'
 import { useEditorManagerContext } from '@/features/ide-react/context/editor-manager-context'
+import { getJSON } from '@/infrastructure/fetch-json'
+import { CompileResponseData } from '../../../../types/compile'
+import {
+  PdfScrollPosition,
+  usePdfScrollPosition,
+} from '@/shared/hooks/use-pdf-scroll-position'
+import { PdfFileDataList } from '@/features/pdf-preview/util/types'
+import { isSplitTestEnabled } from '@/utils/splitTestUtils'
+import { captureException } from '@/infrastructure/error-reporter'
+import OError from '@overleaf/o-error'
+import getMeta from '@/utils/meta'
+import { useIsNewEditorEnabled } from '@/features/ide-redesign/utils/new-editor-utils'
+import { useRailContext } from '@/features/ide-redesign/contexts/rail-context'
 
 type PdfFile = Record<string, any>
 
@@ -48,7 +64,7 @@ export type CompileContext = {
   deliveryLatencies: Record<string, any>
   draft: boolean
   error?: string
-  fileList?: Record<string, any>
+  fileList?: PdfFileDataList
   hasChanges: boolean
   hasShortCompileTimeout: boolean
   highlights?: Record<string, any>[]
@@ -60,14 +76,14 @@ export type CompileContext = {
   pdfFile?: PdfFile
   pdfUrl?: string
   pdfViewer?: string
-  position?: Record<string, any>
+  position?: PdfScrollPosition
   rawLog?: string
   setAutoCompile: (value: boolean) => void
   setDraft: (value: any) => void
   setError: (value: any) => void
   setHasLintingError: (value: any) => void // only for storybook
   setHighlights: (value: any) => void
-  setPosition: (value: any) => void
+  setPosition: Dispatch<SetStateAction<PdfScrollPosition>>
   setShowCompileTimeWarning: (value: any) => void
   setShowLogs: (value: boolean) => void
   toggleLogs: () => void
@@ -96,24 +112,36 @@ export type CompileContext = {
   stopCompile: () => void
   setChangedAt: (value: any) => void
   clearCache: () => void
-  syncToEntry: (value: any) => void
+  syncToEntry: (value: any, keepCurrentView?: boolean) => void
+  recordAction: (action: string) => void
 }
 
 export const LocalCompileContext = createContext<CompileContext | undefined>(
   undefined
 )
 
-export const LocalCompileProvider: FC = ({ children }) => {
-  const ide = useIdeContext()
-
+export const LocalCompileProvider: FC<React.PropsWithChildren> = ({
+  children,
+}) => {
   const { hasPremiumCompile, isProjectOwner } = useEditorContext()
-  const { openDocId } = useEditorManagerContext()
+  const { openDocWithId, openDocs, currentDocument } = useEditorManagerContext()
+  const { role } = useDetachContext()
 
-  const { _id: projectId, rootDocId } = useProjectContext()
+  const newEditor = useIsNewEditorEnabled()
+
+  const {
+    _id: projectId,
+    rootDocId,
+    joinedOnce,
+    imageName,
+    compiler: compilerName,
+  } = useProjectContext()
 
   const { pdfPreviewOpen } = useLayoutContext()
 
-  const { features } = useUserContext()
+  const { openTab: openRailTab } = useRailContext()
+
+  const { features, alphaProgram, labsProgram } = useUserContext()
 
   const { fileTreeData } = useFileTreeData()
   const { findEntityByPath } = useFileTreePathContext()
@@ -161,15 +189,15 @@ export const LocalCompileProvider: FC = ({ children }) => {
     useState(false)
 
   // the id of the CLSI server which ran the compile
-  const [clsiServerId, setClsiServerId] = useState()
+  const [clsiServerId, setClsiServerId] = useState<string>()
 
   // data received in response to a compile request
-  const [data, setData] = useState<Record<string, any>>()
+  const [data, setData] = useState<CompileResponseData>()
 
   // the rootDocId used in the most recent compile request, which may not be the
   // same as the project rootDocId. This is used to calculate correct paths when
   // parsing the compile logs
-  const lastCompileRootDocId = data?.rootDocId
+  const lastCompileRootDocId = data ? (data.rootDocId ?? rootDocId) : null
 
   // callback to be invoked for PdfJsMetrics
   const [firstRenderDone, setFirstRenderDone] = useState(() => () => {})
@@ -179,6 +207,18 @@ export const LocalCompileProvider: FC = ({ children }) => {
 
   // whether the project has been compiled yet
   const [compiledOnce, setCompiledOnce] = useState(false)
+  // fetch initial compile response from cache
+  const [initialCompileFromCache, setInitialCompileFromCache] = useState(
+    getMeta('ol-projectOwnerHasPremiumOnPageLoad') &&
+      isSplitTestEnabled('populate-clsi-cache') &&
+      // Avoid fetching the initial compile from cache in PDF detach tab
+      role !== 'detached'
+  )
+  // fetch of initial compile from cache is pending
+  const [pendingInitialCompileFromCache, setPendingInitialCompileFromCache] =
+    useState(false)
+  // Raw data from clsi-cache, will need post-processing and check settings
+  const [dataFromCache, setDataFromCache] = useState<CompileResponseData>()
 
   // whether the cache is being cleared
   const [clearingCache, setClearingCache] = useState(false)
@@ -203,7 +243,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
   const [error, setError] = useState<string>()
 
   // the list of files that can be downloaded
-  const [fileList, setFileList] = useState<Record<string, any[]>>()
+  const [fileList, setFileList] = useState<PdfFileDataList>()
 
   // the raw contents of the log file
   const [rawLog, setRawLog] = useState<string>()
@@ -214,8 +254,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
   // areas to highlight on the PDF, from synctex
   const [highlights, setHighlights] = useState()
 
-  // scroll position of the PDF
-  const [position, setPosition] = usePersistedState(`pdf.position.${projectId}`)
+  const [position, setPosition] = usePdfScrollPosition(lastCompileRootDocId)
 
   // whether autocompile is switched on
   const [autoCompile, setAutoCompile] = usePersistedState(
@@ -244,9 +283,6 @@ export const LocalCompileProvider: FC = ({ children }) => {
     true
   )
 
-  // the Document currently open in the editor
-  const [currentDoc] = useScopeValue('editor.sharejs_doc')
-
   // whether the editor linter found errors
   const [hasLintingError, setHasLintingError] = useScopeValue('hasLintingError')
 
@@ -268,7 +304,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
   }, [compiling])
 
   const _buildLogEntryAnnotations = useCallback(
-    entries =>
+    (entries: any) =>
       buildLogEntryAnnotations(entries, fileTreeData, lastCompileRootDocId),
     [fileTreeData, lastCompileRootDocId]
   )
@@ -292,13 +328,14 @@ export const LocalCompileProvider: FC = ({ children }) => {
       cleanupCompileResult,
       compilingRef,
       signal,
+      openDocs,
     })
   })
 
   // keep currentDoc in sync with the compiler
   useEffect(() => {
-    compiler.currentDoc = currentDoc
-  }, [compiler, currentDoc])
+    compiler.currentDoc = currentDocument
+  }, [compiler, currentDocument])
 
   // keep the project rootDocId in sync with the compiler
   useEffect(() => {
@@ -323,13 +360,94 @@ export const LocalCompileProvider: FC = ({ children }) => {
     setEditedSinceCompileStarted(changedAt > 0)
   }, [setEditedSinceCompileStarted, changedAt])
 
+  // try to fetch the last compile result after opening the project, potentially before joining the project.
+  useEffect(() => {
+    if (initialCompileFromCache && !pendingInitialCompileFromCache) {
+      setPendingInitialCompileFromCache(true)
+      getJSON(`/project/${projectId}/output/cached/output.overleaf.json`)
+        .then((data: any) => {
+          // Hand data over to next effect, it will wait for project/doc loading.
+          setDataFromCache(data)
+        })
+        .catch(() => {
+          // Let the isAutoCompileOnLoad effect take over
+          setInitialCompileFromCache(false)
+          setPendingInitialCompileFromCache(false)
+        })
+    }
+  }, [projectId, initialCompileFromCache, pendingInitialCompileFromCache])
+
+  // Maybe adopt the compile from cache
+  useEffect(() => {
+    if (!dataFromCache) return // no compile from cache available
+    if (!joinedOnce) return // wait for joinProject, it populates the file-tree.
+    if (!currentDocument) return // wait for current doc to load, it affects the rootDoc override
+    if (compiledOnce) return // regular compile triggered
+
+    // Gracefully access file-tree and getRootDocOverride
+    let settingsUpToDate = false
+    try {
+      dataFromCache.rootDocId = findEntityByPath(
+        dataFromCache.options?.rootResourcePath || ''
+      )?.entity?._id
+      const rootDocOverride = compiler.getRootDocOverrideId() || rootDocId
+      settingsUpToDate =
+        rootDocOverride === dataFromCache.rootDocId &&
+        dataFromCache.options.imageName === imageName &&
+        dataFromCache.options.compiler === compilerName &&
+        dataFromCache.options.draft === draft &&
+        // Allow stopOnFirstError to be enabled in the compile from cache and disabled locally.
+        // Compiles that passed with stopOnFirstError=true will also pass with stopOnFirstError=false. The inverse does not hold, and we need to recompile.
+        !!dataFromCache.options.stopOnFirstError >= stopOnFirstError
+    } catch (err) {
+      captureException(
+        OError.tag(err as unknown as Error, 'validate compile options', {
+          options: dataFromCache.options,
+        })
+      )
+    }
+
+    if (settingsUpToDate) {
+      sendMB('compile-from-cache', { projectId })
+      setData(dataFromCache)
+      setCompiledOnce(true)
+    }
+    setDataFromCache(undefined)
+    setInitialCompileFromCache(false)
+    setPendingInitialCompileFromCache(false)
+  }, [
+    projectId,
+    dataFromCache,
+    joinedOnce,
+    currentDocument,
+    compiledOnce,
+    rootDocId,
+    findEntityByPath,
+    compiler,
+    compilerName,
+    imageName,
+    stopOnFirstError,
+    draft,
+  ])
+
   // always compile the PDF once after opening the project, after the doc has loaded
   useEffect(() => {
-    if (!compiledOnce && currentDoc) {
+    if (
+      !compiledOnce &&
+      currentDocument &&
+      !initialCompileFromCache &&
+      !pendingInitialCompileFromCache
+    ) {
       setCompiledOnce(true)
       compiler.compile({ isAutoCompileOnLoad: true })
     }
-  }, [compiledOnce, currentDoc, compiler])
+  }, [
+    compiledOnce,
+    currentDocument,
+    initialCompileFromCache,
+    pendingInitialCompileFromCache,
+    compiler,
+  ])
 
   useEffect(() => {
     setHasShortCompileTimeout(
@@ -351,11 +469,26 @@ export const LocalCompileProvider: FC = ({ children }) => {
 
   const hasCompileLogsEvents = useFeatureFlag('compile-log-events')
 
+  // compare log entry counts with the previous compile, and record actions between compiles
+  // these are refs rather than state so they don't trigger the effect to run
+  const previousRuleCountsRef = useRef<{
+    ruleCounts: Record<string, number>
+    rootDocId: string
+  } | null>(null)
+  const recordedActionsRef = useRef<Record<string, boolean>>({})
+  const recordAction = useCallback((action: string) => {
+    recordedActionsRef.current[action] = true
+  }, [])
+
   // handle the data returned from a compile request
   // note: this should _only_ run when `data` changes,
   // the other dependencies must all be static
   useEffect(() => {
+    if (!joinedOnce) return // wait for joinProject, it populates the premium flags.
     const abortController = new AbortController()
+
+    const recordedActions = recordedActionsRef.current
+    recordedActionsRef.current = {}
 
     if (data) {
       if (data.clsiServerId) {
@@ -366,7 +499,8 @@ export const LocalCompileProvider: FC = ({ children }) => {
         const outputFiles = new Map()
 
         for (const outputFile of data.outputFiles) {
-          outputFiles.set(outputFile.path, outputFile)
+          // Use a shadow-copy, we will update it in place and append to .url.
+          outputFiles.set(outputFile.path, { ...outputFile })
         }
 
         // set the PDF context
@@ -374,14 +508,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
           setPdfFile(handleOutputFiles(outputFiles, projectId, data))
         }
 
-        setFileList(
-          buildFileList(
-            outputFiles,
-            data.clsiServerId,
-            data.compileGroup,
-            data.outputFilesArchive
-          )
-        )
+        setFileList(buildFileList(outputFiles, data))
 
         // handle log files
         // asynchronous (TODO: cancel on new compile?)
@@ -398,7 +525,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
             )
 
             // sample compile stats for real users
-            if (!window.user.alphaProgram) {
+            if (!alphaProgram) {
               if (['success', 'stopped-on-first-error'].includes(data.status)) {
                 sendMBSampled(
                   'compile-result',
@@ -413,13 +540,31 @@ export const LocalCompileProvider: FC = ({ children }) => {
                 )
               }
 
-              if (hasCompileLogsEvents) {
+              if (hasCompileLogsEvents || labsProgram) {
+                const ruleCounts = buildRuleCounts(
+                  result.logEntries.all
+                ) as Record<string, number>
+
+                const rootDocId = data.rootDocId || compiler.projectRootDocId
+
+                const previousRuleCounts = previousRuleCountsRef.current
+                previousRuleCountsRef.current = { ruleCounts, rootDocId }
+
+                const ruleDeltas =
+                  previousRuleCounts &&
+                  previousRuleCounts.rootDocId === rootDocId
+                    ? buildRuleDeltas(ruleCounts, previousRuleCounts.ruleCounts)
+                    : {}
+
                 sendMB('compile-log-entries', {
                   status: data.status,
                   stopOnFirstError: data.options.stopOnFirstError,
                   isAutoCompileOnLoad: !!data.options.isAutoCompileOnLoad,
                   isAutoCompileOnChange: !!data.options.isAutoCompileOnChange,
-                  ...buildRuleCounts(result.logEntries.all),
+                  rootDocId,
+                  ...recordedActions,
+                  ...ruleCounts,
+                  ...ruleDeltas,
                 })
               }
             }
@@ -489,8 +634,11 @@ export const LocalCompileProvider: FC = ({ children }) => {
       abortController.abort()
     }
   }, [
+    joinedOnce,
     data,
-    ide,
+    alphaProgram,
+    labsProgram,
+    features,
     hasCompileLogsEvents,
     hasPremiumCompile,
     isProjectOwner,
@@ -500,6 +648,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
     setLogEntries,
     setLogEntryAnnotations,
     setPdfFile,
+    compiler,
   ])
 
   // switch to logs if there's an error
@@ -545,10 +694,11 @@ export const LocalCompileProvider: FC = ({ children }) => {
 
   // start a compile manually
   const startCompile = useCallback(
-    options => {
+    (options: any) => {
+      setCompiledOnce(true)
       compiler.compile(options)
     },
-    [compiler]
+    [compiler, setCompiledOnce]
   )
 
   // stop a compile manually
@@ -572,17 +722,18 @@ export const LocalCompileProvider: FC = ({ children }) => {
   }, [compiler])
 
   const syncToEntry = useCallback(
-    entry => {
+    (entry: any, keepCurrentView = false) => {
       const result = findEntityByPath(entry.file)
 
       if (result && result.type === 'doc') {
-        openDocId(result.entity._id, {
+        openDocWithId(result.entity._id, {
           gotoLine: entry.line ?? undefined,
           gotoColumn: entry.column ?? undefined,
+          keepCurrentView,
         })
       }
     },
-    [findEntityByPath, openDocId]
+    [findEntityByPath, openDocWithId]
   )
 
   // clear the cache then run a compile, triggered by a menu item
@@ -595,6 +746,22 @@ export const LocalCompileProvider: FC = ({ children }) => {
   // After a compile, the compiler sets `data.options` to the options that were
   // used for that compile.
   const lastCompileOptions = useMemo(() => data?.options || {}, [data])
+
+  useEffect(() => {
+    const listener = () => {
+      if (newEditor) {
+        openRailTab('errors')
+      } else {
+        setShowLogs(true)
+      }
+    }
+
+    window.addEventListener('editor:show-logs', listener)
+
+    return () => {
+      window.removeEventListener('editor:show-logs', listener)
+    }
+  }, [newEditor, openRailTab])
 
   const value = useMemo(
     () => ({
@@ -650,6 +817,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
       setChangedAt,
       cleanupCompileResult,
       syncToEntry,
+      recordAction,
     }),
     [
       animateCompileDropdownArrow,
@@ -701,6 +869,7 @@ export const LocalCompileProvider: FC = ({ children }) => {
       setShowLogs,
       toggleLogs,
       syncToEntry,
+      recordAction,
     ]
   )
 

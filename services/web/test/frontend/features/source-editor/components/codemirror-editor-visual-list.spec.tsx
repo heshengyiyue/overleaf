@@ -2,8 +2,7 @@ import { EditorProviders } from '../../../helpers/editor-providers'
 import CodemirrorEditor from '../../../../../frontend/js/features/source-editor/components/codemirror-editor'
 import { mockScope } from '../helpers/mock-scope'
 import { TestContainer } from '../helpers/test-container'
-
-const isMac = /Mac/.test(window.navigator?.platform)
+import { isMac } from '@/shared/utils/os'
 
 const mountEditor = (content: string) => {
   const scope = mockScope(content)
@@ -25,7 +24,6 @@ describe('<CodeMirrorEditor/> lists in Rich Text mode', function () {
   beforeEach(function () {
     window.metaAttributesCache.set('ol-preventCompileOnLoad', true)
     cy.interceptEvents()
-    cy.interceptSpelling()
   })
 
   it('creates a nested list inside an unindented list', function () {

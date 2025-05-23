@@ -12,7 +12,7 @@
 const sinon = require('sinon')
 const modulePath = '../../../../app/js/ShareJsUpdateManager.js'
 const SandboxedModule = require('sandboxed-module')
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 
 describe('ShareJsUpdateManager', function () {
   beforeEach(function () {
@@ -33,7 +33,9 @@ describe('ShareJsUpdateManager', function () {
             return (this.rclient = { auth() {} })
           },
         },
-        './RealTimeRedisManager': (this.RealTimeRedisManager = {}),
+        './RealTimeRedisManager': (this.RealTimeRedisManager = {
+          sendCanaryAppliedOp: sinon.stub(),
+        }),
         './Metrics': (this.metrics = { inc: sinon.stub() }),
       },
       globals: {

@@ -1,6 +1,8 @@
 include ../_mixins/navbar
 
-nav.navbar.navbar-default.navbar-main.navbar-expand-lg
+nav.navbar.navbar-default.navbar-main.navbar-expand-lg(class={
+	'website-redesign-navbar': isWebsiteRedesign
+})
 	.container-fluid.navbar-container
 		.navbar-header
 			if settings.nav.custom_logo
@@ -10,7 +12,7 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 			else
 				a(href='/', aria-label=settings.appName).navbar-brand
 
-			- var enableUpgradeButton = projectDashboardReact && usersBestSubscription && usersBestSubscription.type === 'free'
+			- var enableUpgradeButton = projectDashboardReact && usersBestSubscription && (usersBestSubscription.type === 'free' || usersBestSubscription.type === 'standalone-ai-add-on')
 			if (enableUpgradeButton)
 				a.btn.btn-primary.me-2.d-md-none(
 					href="/user/subscription/plans"
@@ -25,6 +27,7 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 		- var canDisplayAdminRedirect = canRedirectToAdminDomain()
 		- var canDisplaySplitTestMenu = hasFeature('saas') && (canDisplayAdminMenu || (getSessionUser() && getSessionUser().staffAccess && (getSessionUser().staffAccess.splitTestMetrics || getSessionUser().staffAccess.splitTestManagement)))
 		- var canDisplaySurveyMenu = hasFeature('saas') && canDisplayAdminMenu
+		- var canDisplayScriptLogMenu = hasFeature('saas') && canDisplayAdminMenu
 
 		if (typeof suppressNavbarRight === "undefined")
 			button.navbar-toggler.collapsed(
@@ -45,6 +48,11 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 								aria-haspopup="true",
 								aria-expanded="false",
 								data-bs-toggle="dropdown"
+								role="menuitem"
+								event-tracking="menu-expand"
+								event-tracking-mb="true"
+								event-tracking-trigger="click"
+								event-segmentation={"item": "admin", "location": "top-menu"}
 							)
 								| Admin
 								span.caret
@@ -54,11 +62,13 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 									+dropdown-menu-link-item()(href="/admin/user") Manage Users
 									+dropdown-menu-link-item()(href="/admin/project") Project URL Lookup
 								if canDisplayAdminRedirect
-									+dropdown-menu-link-item()(settings.adminUrl) Switch to Admin
+									+dropdown-menu-link-item()(href=settings.adminUrl) Switch to Admin
 								if canDisplaySplitTestMenu
 									+dropdown-menu-link-item()(href="/admin/split-test") Manage Feature Flags
 								if canDisplaySurveyMenu
 									+dropdown-menu-link-item()(href="/admin/survey") Manage Surveys
+								if canDisplayScriptLogMenu
+									+dropdown-menu-link-item()(href="/admin/script-logs") View Script Logs
 
 					// loop over header_extras
 					each item in nav.header_extras
@@ -80,6 +90,11 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 										aria-haspopup="true",
 										aria-expanded="false",
 										data-bs-toggle="dropdown"
+										role="menuitem"
+										event-tracking="menu-expand"
+										event-tracking-mb="true"
+										event-tracking-trigger="click"
+										event-segmentation={"item": item.trackingKey, "location": "top-menu"}
 									)
 										| !{translate(item.text)}
 										span.caret
@@ -88,18 +103,18 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 											if child.divider
 												+dropdown-menu-divider
 											else if child.isContactUs
-												+dropdown-menu-link-item()(data-ol-open-contact-form-modal="contact-us" data-bs-target="#contactUsModal" href data-bs-toggle="modal")
-													span(event-tracking="menu-clicked-contact" event-tracking-mb="true" event-tracking-trigger="click")
+												+dropdown-menu-link-item()(data-ol-open-contact-form-modal="contact-us" data-bs-target="#contactUsModal" href data-bs-toggle="modal" event-tracking="menu-click" event-tracking-mb="true" event-tracking-trigger="click" event-segmentation={"item": "contact", "location": "top-menu"})
+													span
 														| #{translate("contact_us")}
 											else
 												if child.url
 													+dropdown-menu-link-item()(
 														href=child.url,
 														class=child.class,
-														event-tracking=child.event
+														event-tracking="menu-click"
 														event-tracking-mb="true"
 														event-tracking-trigger="click"
-														event-segmentation=child.eventSegmentation
+														event-segmentation={ item: child.trackingKey, location: 'top-menu' }
 													) !{translate(child.text)}
 												else
 													+dropdown-menu-item !{translate(child.text)}
@@ -109,9 +124,10 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 										+nav-link(
 											href=item.url,
 											class=item.class,
-											event-tracking=item.event
+											event-tracking="menu-click"
 											event-tracking-mb="true"
 											event-tracking-trigger="click"
+											event-segmentation={ item: item.trackingKey, location: 'top-menu' }
 										) !{translate(item.text)}
 									else
 										| !{translate(item.text)}
@@ -123,22 +139,22 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 							+nav-item.primary
 								+nav-link(
 									href="/register"
-									event-tracking="menu-clicked-register"
+									event-tracking="menu-click"
 									event-tracking-action="clicked"
 									event-tracking-trigger="click"
 									event-tracking-mb="true"
-									event-segmentation={ page: currentUrl }
+									event-segmentation={ page: currentUrl, item: 'register', location: 'top-menu' }
 								) #{translate('sign_up')}
 
 						// login link
 						+nav-item
 							+nav-link(
 								href="/login"
-								event-tracking="menu-clicked-login"
+								event-tracking="menu-click"
 								event-tracking-action="clicked"
 								event-tracking-trigger="click"
 								event-tracking-mb="true"
-								event-segmentation={ page: currentUrl }
+								event-segmentation={ page: currentUrl, item: 'login', location: 'top-menu' }
 							) #{translate('log_in')}
 
 					// projects link and account menu
@@ -150,6 +166,11 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 								aria-haspopup="true",
 								aria-expanded="false",
 								data-bs-toggle="dropdown"
+								role="menuitem"
+								event-tracking="menu-expand"
+								event-tracking-mb="true"
+								event-tracking-trigger="click"
+								event-segmentation={"item": "account", "location": "top-menu"}
 							)
 								| #{translate('Account')}
 								span.caret
@@ -157,7 +178,7 @@ nav.navbar.navbar-default.navbar-main.navbar-expand-lg
 								+dropdown-menu-item
 									div.disabled.dropdown-item #{getSessionUser().email}
 								+dropdown-menu-divider
-								+dropdown-menu-link-item()(href="/user/settings") #{translate('Account Settings')}
+								+dropdown-menu-link-item()(href="/user/settings") #{translate('account_settings')}
 								if nav.showSubscriptionLink
 									+dropdown-menu-link-item()(href="/user/subscription") #{translate('subscription')}
 								+dropdown-menu-divider

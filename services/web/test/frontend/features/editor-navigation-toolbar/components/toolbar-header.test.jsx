@@ -17,6 +17,7 @@ describe('<ToolbarHeader />', function () {
     renameProject: () => {},
     openShareModal: () => {},
     hasPublishPermissions: true,
+    chatVisible: true,
     trackChangesVisible: true,
     handleChangeLayout: () => {},
     pdfLayout: 'sideBySide',
@@ -24,6 +25,11 @@ describe('<ToolbarHeader />', function () {
     reattach: () => {},
     detach: () => {},
   }
+
+  beforeEach(function () {
+    window.metaAttributesCache.set('ol-chatEnabled', true)
+    window.metaAttributesCache.set('ol-preventCompileOnLoad', true)
+  })
 
   describe('cobranding logo', function () {
     it('is not displayed by default', function () {
@@ -83,10 +89,10 @@ describe('<ToolbarHeader />', function () {
       screen.getByText('Chat')
     })
 
-    it('is not displayed when "isRestrictedTokenMember" prop is set to true', function () {
+    it('is not displayed when "chatVisible" prop is set to false', function () {
       const props = {
         ...defaultProps,
-        isRestrictedTokenMember: true,
+        chatVisible: false,
       }
       renderWithEditorContext(<ToolbarHeader {...props} />)
       expect(screen.queryByText('Chat')).to.not.exist

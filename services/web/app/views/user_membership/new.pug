@@ -1,5 +1,8 @@
 extends ../layout-marketing
 
+block vars
+	- bootstrap5PageStatus = 'disabled'
+
 block content
 	main.content.content-alt#main-content
 		.container
@@ -12,7 +15,7 @@ block content
 						action=''
 					)
 						input(name="_csrf", type="hidden", value=csrfToken)
-						button.btn.btn-primary.text-capitalize(
+						button.btn.btn-primary(
 							type="submit",
 							data-ol-disabled-inflight
 						)

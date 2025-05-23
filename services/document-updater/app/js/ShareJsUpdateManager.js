@@ -16,10 +16,10 @@ const logger = require('@overleaf/logger')
 const Settings = require('@overleaf/settings')
 const { promisifyAll } = require('@overleaf/promise-utils')
 const Keys = require('./UpdateKeys')
-const { EventEmitter } = require('events')
-const util = require('util')
+const { EventEmitter } = require('node:events')
+const util = require('node:util')
 const RealTimeRedisManager = require('./RealTimeRedisManager')
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 const metrics = require('./Metrics')
 const Errors = require('./Errors')
 
@@ -128,9 +128,14 @@ const ShareJsUpdateManager = {
   },
 
   _sendOp(projectId, docId, op) {
-    return RealTimeRedisManager.sendData({
+    RealTimeRedisManager.sendData({
       project_id: projectId,
       doc_id: docId,
+      op,
+    })
+    RealTimeRedisManager.sendCanaryAppliedOp({
+      projectId,
+      docId,
       op,
     })
   },

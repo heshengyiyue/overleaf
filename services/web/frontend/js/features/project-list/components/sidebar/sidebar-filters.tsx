@@ -1,5 +1,4 @@
 import { useTranslation } from 'react-i18next'
-import { Button } from 'react-bootstrap'
 import {
   Filter,
   useProjectListContext,
@@ -19,9 +18,9 @@ export function SidebarFilter({ filter, text }: SidebarFilterProps) {
     <ProjectsFilterMenu filter={filter}>
       {isActive => (
         <li className={isActive ? 'active' : ''}>
-          <Button onClick={() => selectFilter(filter)} bsStyle={null}>
+          <button type="button" onClick={() => selectFilter(filter)}>
             {text}
-          </Button>
+          </button>
         </li>
       )}
     </ProjectsFilterMenu>
@@ -38,6 +37,9 @@ export default function SidebarFilters() {
       <SidebarFilter filter="shared" text={t('shared_with_you')} />
       <SidebarFilter filter="archived" text={t('archived_projects')} />
       <SidebarFilter filter="trashed" text={t('trashed_projects')} />
+      <li aria-hidden="true">
+        <hr />
+      </li>
       <TagsList />
     </ul>
   )

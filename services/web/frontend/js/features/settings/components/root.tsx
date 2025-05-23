@@ -18,11 +18,10 @@ import { SSOProvider } from '../context/sso-context'
 import { SplitTestProvider } from '@/shared/context/split-test-context'
 import useWaitForI18n from '../../../shared/hooks/use-wait-for-i18n'
 import useScrollToIdOnLoad from '../../../shared/hooks/use-scroll-to-id-on-load'
-import { ExposedSettings } from '../../../../../types/exposed-settings'
 import { SSOAlert } from './emails/sso-alert'
 import OLRow from '@/features/ui/components/ol/ol-row'
 import OLCol from '@/features/ui/components/ol/ol-col'
-import OLCard from '@/features/ui/components/ol/ol-card'
+import OLPageContentCard from '@/features/ui/components/ol/ol-page-content-card'
 
 function SettingsPageRoot() {
   const { isReady } = useWaitForI18n()
@@ -45,13 +44,11 @@ function SettingsPageRoot() {
 
 function SettingsPageContent() {
   const { t } = useTranslation()
-  const { isOverleaf, labsEnabled } = getMeta(
-    'ol-ExposedSettings'
-  ) as ExposedSettings
+  const { isOverleaf, labsEnabled } = getMeta('ol-ExposedSettings')
 
   return (
     <UserProvider>
-      <OLCard>
+      <OLPageContentCard>
         <div className="page-header">
           <h1>{t('account_settings')}</h1>
         </div>
@@ -83,7 +80,6 @@ function SettingsPageContent() {
           {labsEnabled ? (
             <>
               <LabsProgramSection />
-              <hr />
             </>
           ) : null}
           <SessionsSection />
@@ -96,7 +92,7 @@ function SettingsPageContent() {
             </>
           ) : null}
         </div>
-      </OLCard>
+      </OLPageContentCard>
     </UserProvider>
   )
 }

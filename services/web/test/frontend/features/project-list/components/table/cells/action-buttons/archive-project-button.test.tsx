@@ -16,22 +16,22 @@ describe('<ArchiveProjectButton />', function () {
     resetProjectListContextFetch()
   })
 
-  it('renders tooltip for button', function () {
+  it('renders tooltip for button', async function () {
     renderWithProjectListContext(
       <ArchiveProjectButtonTooltip project={archiveableProject} />
     )
-    const btn = screen.getByLabelText('Archive')
+    const btn = screen.getByRole('button', { name: 'Archive' })
     fireEvent.mouseOver(btn)
-    screen.getByRole('tooltip', { name: 'Archive' })
+    await screen.findByRole('tooltip', { name: 'Archive' })
   })
 
   it('opens the modal when clicked', function () {
     renderWithProjectListContext(
       <ArchiveProjectButtonTooltip project={archiveableProject} />
     )
-    const btn = screen.getByLabelText('Archive')
+    const btn = screen.getByRole('button', { name: 'Archive' })
     fireEvent.click(btn)
-    screen.getByText('Archive Projects')
+    screen.getByText('Archive projects')
     screen.getByText(archiveableProject.name)
   })
 
@@ -39,7 +39,7 @@ describe('<ArchiveProjectButton />', function () {
     renderWithProjectListContext(
       <ArchiveProjectButtonTooltip project={archivedProject} />
     )
-    expect(screen.queryByLabelText('Archive')).to.be.null
+    expect(screen.queryByRole('button', { name: 'Archive' })).to.be.null
   })
 
   it('should archive the projects', async function () {
@@ -54,19 +54,24 @@ describe('<ArchiveProjectButton />', function () {
     renderWithProjectListContext(
       <ArchiveProjectButtonTooltip project={project} />
     )
-    const btn = screen.getByLabelText('Archive')
+    const btn = screen.getByRole('button', { name: 'Archive' })
     fireEvent.click(btn)
-    screen.getByText('Archive Projects')
+    screen.getByText('Archive projects')
     screen.getByText('You are about to archive the following projects:')
     screen.getByText('Archiving projects won’t affect your collaborators.')
-    const confirmBtn = screen.getByText('Confirm') as HTMLButtonElement
+    const confirmBtn = screen.getByRole('button', {
+      name: 'Confirm',
+    }) as HTMLButtonElement
     fireEvent.click(confirmBtn)
     expect(confirmBtn.disabled).to.be.true
 
     await waitFor(
       () =>
-        expect(archiveProjectMock.called(`/project/${project.id}/archive`)).to
-          .be.true
+        expect(
+          archiveProjectMock.callHistory.called(
+            `/project/${project.id}/archive`
+          )
+        ).to.be.true
     )
   })
 })

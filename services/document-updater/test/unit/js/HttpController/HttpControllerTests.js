@@ -13,9 +13,10 @@ describe('HttpController', function () {
         }),
         './ProjectHistoryRedisManager': (this.ProjectHistoryRedisManager = {}),
         './ProjectManager': (this.ProjectManager = {}),
-        './ProjectFlusher': { flushAllProjects() {} },
         './DeleteQueueManager': (this.DeleteQueueManager = {}),
-        './RedisManager': (this.RedisManager = {}),
+        './RedisManager': (this.RedisManager = {
+          DOC_OPS_TTL: 42,
+        }),
         './Metrics': (this.Metrics = {}),
         './Errors': Errors,
         '@overleaf/settings': { max_doc_length: 2 * 1024 * 1024 },
@@ -25,6 +26,7 @@ describe('HttpController', function () {
     this.Metrics.Timer.prototype.done = sinon.stub()
 
     this.project_id = 'project-id-123'
+    this.projectHistoryId = '123'
     this.doc_id = 'doc-id-123'
     this.source = 'editor'
     this.next = sinon.stub()
@@ -64,7 +66,9 @@ describe('HttpController', function () {
             this.version,
             [],
             this.ranges,
-            this.pathname
+            this.pathname,
+            this.projectHistoryId,
+            'sharejs-text-ot'
           )
         this.HttpController.getDoc(this.req, this.res, this.next)
       })
@@ -76,16 +80,16 @@ describe('HttpController', function () {
       })
 
       it('should return the doc as JSON', function () {
-        this.res.json
-          .calledWith({
-            id: this.doc_id,
-            lines: this.lines,
-            version: this.version,
-            ops: [],
-            ranges: this.ranges,
-            pathname: this.pathname,
-          })
-          .should.equal(true)
+        this.res.json.should.have.been.calledWith({
+          id: this.doc_id,
+          lines: this.lines,
+          version: this.version,
+          ops: [],
+          ranges: this.ranges,
+          pathname: this.pathname,
+          ttlInS: 42,
+          type: 'sharejs-text-ot',
+        })
       })
 
       it('should log the request', function () {
@@ -113,7 +117,9 @@ describe('HttpController', function () {
             this.version,
             this.ops,
             this.ranges,
-            this.pathname
+            this.pathname,
+            this.projectHistoryId,
+            'sharejs-text-ot'
           )
         this.req.query = { fromVersion: `${this.fromVersion}` }
         this.HttpController.getDoc(this.req, this.res, this.next)
@@ -126,16 +132,16 @@ describe('HttpController', function () {
       })
 
       it('should return the doc as JSON', function () {
-        this.res.json
-          .calledWith({
-            id: this.doc_id,
-            lines: this.lines,
-            version: this.version,
-            ops: this.ops,
-            ranges: this.ranges,
-            pathname: this.pathname,
-          })
-          .should.equal(true)
+        this.res.json.should.have.been.calledWith({
+          id: this.doc_id,
+          lines: this.lines,
+          version: this.version,
+          ops: this.ops,
+          ranges: this.ranges,
+          pathname: this.pathname,
+          ttlInS: 42,
+          type: 'sharejs-text-ot',
+        })
       })
 
       it('should log the request', function () {
@@ -181,6 +187,65 @@ describe('HttpController', function () {
     })
   })
 
+  describe('getComment', function () {
+    beforeEach(function () {
+      this.ranges = {
+        changes: 'mock',
+        comments: [
+          {
+            id: 'comment-id-1',
+          },
+          {
+            id: 'comment-id-2',
+          },
+        ],
+      }
+      this.req = {
+        params: {
+          project_id: this.project_id,
+          doc_id: this.doc_id,
+          comment_id: this.comment_id,
+        },
+        query: {},
+        body: {},
+      }
+    })
+
+    beforeEach(function () {
+      this.DocumentManager.getCommentWithLock = sinon
+        .stub()
+        .callsArgWith(3, null, this.ranges.comments[0])
+      this.HttpController.getComment(this.req, this.res, this.next)
+    })
+
+    it('should get the comment', function () {
+      this.DocumentManager.getCommentWithLock
+        .calledWith(this.project_id, this.doc_id, this.comment_id)
+        .should.equal(true)
+    })
+
+    it('should return the comment as JSON', function () {
+      this.res.json
+        .calledWith({
+          id: 'comment-id-1',
+        })
+        .should.equal(true)
+    })
+
+    it('should log the request', function () {
+      this.logger.debug
+        .calledWith(
+          {
+            projectId: this.project_id,
+            docId: this.doc_id,
+            commentId: this.comment_id,
+          },
+          'getting comment via http'
+        )
+        .should.equal(true)
+    })
+  })
+
   describe('setDoc', function () {
     beforeEach(function () {
       this.lines = ['one', 'two', 'three']
@@ -206,7 +271,7 @@ describe('HttpController', function () {
       beforeEach(function () {
         this.DocumentManager.setDocWithLock = sinon
           .stub()
-          .callsArgWith(6, null, { rev: '123' })
+          .callsArgWith(7, null, { rev: '123' })
         this.HttpController.setDoc(this.req, this.res, this.next)
       })
 
@@ -218,7 +283,8 @@ describe('HttpController', function () {
             this.lines,
             this.source,
             this.user_id,
-            this.undoing
+            this.undoing,
+            true
           )
           .should.equal(true)
       })
@@ -252,7 +318,7 @@ describe('HttpController', function () {
       beforeEach(function () {
         this.DocumentManager.setDocWithLock = sinon
           .stub()
-          .callsArgWith(6, new Error('oops'))
+          .callsArgWith(7, new Error('oops'))
         this.HttpController.setDoc(this.req, this.res, this.next)
       })
 
@@ -1066,7 +1132,7 @@ describe('HttpController', function () {
 
     describe('successfully', function () {
       beforeEach(function () {
-        this.HistoryManager.resyncProjectHistory = sinon.stub().callsArgWith(4)
+        this.HistoryManager.resyncProjectHistory = sinon.stub().callsArgWith(5)
         this.HttpController.resyncProjectHistory(this.req, this.res, this.next)
       })
 
@@ -1076,13 +1142,14 @@ describe('HttpController', function () {
             this.project_id,
             this.projectHistoryId,
             this.docs,
-            this.files
+            this.files,
+            {}
           )
           .should.equal(true)
       })
 
       it('should return a successful No Content response', function () {
-        this.res.sendStatus.calledWith(204).should.equal(true)
+        this.res.sendStatus.should.have.been.calledWith(204)
       })
     })
 
@@ -1090,12 +1157,104 @@ describe('HttpController', function () {
       beforeEach(function () {
         this.HistoryManager.resyncProjectHistory = sinon
           .stub()
-          .callsArgWith(4, new Error('oops'))
+          .callsArgWith(5, new Error('oops'))
         this.HttpController.resyncProjectHistory(this.req, this.res, this.next)
       })
 
       it('should call next with the error', function () {
         this.next.calledWith(sinon.match.instanceOf(Error)).should.equal(true)
+      })
+    })
+  })
+
+  describe('appendToDoc', function () {
+    beforeEach(function () {
+      this.lines = ['one', 'two', 'three']
+      this.source = 'dropbox'
+      this.user_id = 'user-id-123'
+      this.req = {
+        headers: {},
+        params: {
+          project_id: this.project_id,
+          doc_id: this.doc_id,
+        },
+        query: {},
+        body: {
+          lines: this.lines,
+          source: this.source,
+          user_id: this.user_id,
+          undoing: (this.undoing = true),
+        },
+      }
+    })
+
+    describe('successfully', function () {
+      beforeEach(function () {
+        this.DocumentManager.appendToDocWithLock = sinon
+          .stub()
+          .callsArgWith(5, null, { rev: '123' })
+        this.HttpController.appendToDoc(this.req, this.res, this.next)
+      })
+
+      it('should append to the doc', function () {
+        this.DocumentManager.appendToDocWithLock
+          .calledWith(
+            this.project_id,
+            this.doc_id,
+            this.lines,
+            this.source,
+            this.user_id
+          )
+          .should.equal(true)
+      })
+
+      it('should return a json response with the document rev from web', function () {
+        this.res.json.calledWithMatch({ rev: '123' }).should.equal(true)
+      })
+
+      it('should log the request', function () {
+        this.logger.debug
+          .calledWith(
+            {
+              docId: this.doc_id,
+              projectId: this.project_id,
+              lines: this.lines,
+              source: this.source,
+              userId: this.user_id,
+            },
+            'appending to doc via http'
+          )
+          .should.equal(true)
+      })
+
+      it('should time the request', function () {
+        this.Metrics.Timer.prototype.done.called.should.equal(true)
+      })
+    })
+
+    describe('when an errors occurs', function () {
+      beforeEach(function () {
+        this.DocumentManager.appendToDocWithLock = sinon
+          .stub()
+          .callsArgWith(5, new Error('oops'))
+        this.HttpController.appendToDoc(this.req, this.res, this.next)
+      })
+
+      it('should call next with the error', function () {
+        this.next.calledWith(sinon.match.instanceOf(Error)).should.equal(true)
+      })
+    })
+
+    describe('when the payload is too large', function () {
+      beforeEach(function () {
+        this.DocumentManager.appendToDocWithLock = sinon
+          .stub()
+          .callsArgWith(5, new Errors.FileTooLargeError())
+        this.HttpController.appendToDoc(this.req, this.res, this.next)
+      })
+
+      it('should send back a 422 response', function () {
+        this.res.sendStatus.calledWith(422).should.equal(true)
       })
     })
   })

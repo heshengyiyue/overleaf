@@ -1,24 +1,16 @@
-/* eslint-disable
-    max-len,
-    no-unused-vars,
-*/
-// TODO: This file was created by bulk-decaffeinate.
-// Fix any style issues and re-enable lint.
-/*
- * decaffeinate suggestions:
- * DS102: Remove unnecessary code created because of implicit returns
- * DS207: Consider shorter variations of null checks
- * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
- */
-let TemplatesController
 const path = require('path')
 const SessionManager = require('../Authentication/SessionManager')
 const TemplatesManager = require('./TemplatesManager')
 const ProjectHelper = require('../Project/ProjectHelper')
 const logger = require('@overleaf/logger')
+const { expressify } = require('@overleaf/promise-utils')
+const SplitTestHandler = require('../SplitTests/SplitTestHandler')
 
-module.exports = TemplatesController = {
-  getV1Template(req, res) {
+const TemplatesController = {
+  async getV1Template(req, res) {
+    // Read split test assignment so that it's available for Pug to read
+    await SplitTestHandler.promises.getAssignment(req, res, 'core-pug-bs5')
+
     const templateVersionId = req.params.Template_version_id
     const templateId = req.query.id
     if (!/^[0-9]+$/.test(templateVersionId) || !/^[0-9]+$/.test(templateId)) {
@@ -28,15 +20,16 @@ module.exports = TemplatesController = {
       )
       return res.sendStatus(400)
     }
-    const data = {}
-    data.templateVersionId = templateVersionId
-    data.templateId = templateId
-    data.name = req.query.templateName
-    data.compiler = ProjectHelper.compilerFromV1Engine(req.query.latexEngine)
-    data.imageName = req.query.texImage
-    data.mainFile = req.query.mainFile
-    data.brandVariationId = req.query.brandVariationId
-    return res.render(
+    const data = {
+      templateVersionId,
+      templateId,
+      name: req.query.templateName,
+      compiler: ProjectHelper.compilerFromV1Engine(req.query.latexEngine),
+      imageName: req.query.texImage,
+      mainFile: req.query.mainFile,
+      brandVariationId: req.query.brandVariationId,
+    }
+    res.render(
       path.resolve(
         __dirname,
         '../../../views/project/editor/new_from_template'
@@ -45,9 +38,9 @@ module.exports = TemplatesController = {
     )
   },
 
-  createProjectFromV1Template(req, res, next) {
+  async createProjectFromV1Template(req, res) {
     const userId = SessionManager.getLoggedInUserId(req.session)
-    return TemplatesManager.createProjectFromV1Template(
+    const project = await TemplatesManager.promises.createProjectFromV1Template(
       req.body.brandVariationId,
       req.body.compiler,
       req.body.mainFile,
@@ -55,14 +48,19 @@ module.exports = TemplatesController = {
       req.body.templateName,
       req.body.templateVersionId,
       userId,
-      req.body.imageName,
-      function (err, project) {
-        if (err != null) {
-          return next(err)
-        }
-        delete req.session.templateData
-        return res.redirect(`/project/${project._id}`)
-      }
+      req.body.imageName
     )
+    delete req.session.templateData
+    if (!project) {
+      throw new Error('failed to create project from template')
+    }
+    return res.redirect(`/project/${project._id}`)
   },
+}
+
+module.exports = {
+  getV1Template: expressify(TemplatesController.getV1Template),
+  createProjectFromV1Template: expressify(
+    TemplatesController.createProjectFromV1Template
+  ),
 }

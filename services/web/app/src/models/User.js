@@ -6,6 +6,7 @@ const { ObjectId } = Schema
 
 // See https://stackoverflow.com/questions/386294/what-is-the-maximum-length-of-a-valid-email-address/574698#574698
 const MAX_EMAIL_LENGTH = 254
+const MAX_NAME_LENGTH = 255
 
 const UserSchema = new Schema(
   {
@@ -26,8 +27,16 @@ const UserSchema = new Schema(
         reconfirmedAt: { type: Date },
       },
     ],
-    first_name: { type: String, default: '' },
-    last_name: { type: String, default: '' },
+    first_name: {
+      type: String,
+      default: '',
+      maxlength: MAX_NAME_LENGTH,
+    },
+    last_name: {
+      type: String,
+      default: '',
+      maxlength: MAX_NAME_LENGTH,
+    },
     role: { type: String, default: '' },
     institution: { type: String, default: '' },
     hashedPassword: String,
@@ -72,6 +81,7 @@ const UserSchema = new Schema(
     lastLoggedIn: { type: Date },
     lastLoginIp: { type: String, default: '' },
     lastPrimaryEmailCheck: { type: Date },
+    lastTrial: { type: Date },
     loginCount: { type: Number, default: 0 },
     holdingAccount: { type: Boolean, default: false },
     ace: {
@@ -86,6 +96,9 @@ const UserSchema = new Schema(
       syntaxValidation: { type: Boolean },
       fontFamily: { type: String },
       lineHeight: { type: String },
+      mathPreview: { type: Boolean, default: true },
+      referencesSearchMode: { type: String, default: 'advanced' }, // 'advanced' or 'simple'
+      enableNewEditor: { type: Boolean },
     },
     features: {
       collaborators: {
@@ -107,7 +120,6 @@ const UserSchema = new Schema(
         type: String,
         default: Settings.defaultFeatures.compileGroup,
       },
-      templates: { type: Boolean, default: Settings.defaultFeatures.templates },
       references: {
         type: Boolean,
         default: Settings.defaultFeatures.references,
@@ -118,6 +130,7 @@ const UserSchema = new Schema(
       },
       mendeley: { type: Boolean, default: Settings.defaultFeatures.mendeley },
       zotero: { type: Boolean, default: Settings.defaultFeatures.zotero },
+      papers: { type: Boolean, default: Settings.defaultFeatures.papers },
       referencesSearch: {
         type: Boolean,
         default: Settings.defaultFeatures.referencesSearch,
@@ -125,6 +138,10 @@ const UserSchema = new Schema(
       symbolPalette: {
         type: Boolean,
         default: Settings.defaultFeatures.symbolPalette,
+      },
+      aiErrorAssistant: {
+        type: Boolean,
+        default: false,
       },
     },
     featuresOverrides: [
@@ -138,6 +155,7 @@ const UserSchema = new Schema(
         expiresAt: { type: Date },
         note: { type: String },
         features: {
+          aiErrorAssistant: { type: Boolean },
           collaborators: { type: Number },
           versioning: { type: Boolean },
           dropbox: { type: Boolean },
@@ -148,6 +166,7 @@ const UserSchema = new Schema(
           templates: { type: Boolean },
           trackChanges: { type: Boolean },
           mendeley: { type: Boolean },
+          papers: { type: Boolean },
           zotero: { type: Boolean },
           referencesSearch: { type: Boolean },
           symbolPalette: { type: Boolean },
@@ -171,13 +190,21 @@ const UserSchema = new Schema(
       // The actual values are managed by third-party-references.
       mendeley: Schema.Types.Mixed,
       zotero: Schema.Types.Mixed,
+      papers: Schema.Types.Mixed,
     },
     writefull: {
-      enabled: { type: Boolean, default: false },
+      enabled: { type: Boolean, default: null },
+      autoCreatedAccount: { type: Boolean, default: false },
+      isPremium: { type: Boolean, default: false },
+      premiumSource: { type: String, default: null },
+    },
+    aiErrorAssistant: {
+      enabled: { type: Boolean, default: true },
     },
     alphaProgram: { type: Boolean, default: false }, // experimental features
     betaProgram: { type: Boolean, default: false },
     labsProgram: { type: Boolean, default: false },
+    labsExperiments: { type: Array, default: [] },
     overleaf: {
       id: { type: Number },
       accessToken: { type: String },

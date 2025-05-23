@@ -222,10 +222,10 @@ templates.passwordResetRequested = ctaTemplate({
 
 templates.confirmEmail = ctaTemplate({
   subject() {
-    return `Confirm Email - ${settings.appName}`
+    return `Confirm email - ${settings.appName}`
   },
   title() {
-    return 'Confirm Email'
+    return 'Confirm email'
   },
   message(opts) {
     return [
@@ -234,12 +234,12 @@ templates.confirmEmail = ctaTemplate({
   },
   secondaryMessage() {
     return [
-      'If you did not request this, please let us know at <a href="mailto:support@overleaf.com">support@overleaf.com</a>.',
+      `If you did not request this, please let us know at <a href="mailto:${settings.adminEmail}">${settings.adminEmail}</a>.`,
       `If you have any questions or trouble confirming your email address, please get in touch with our support team at ${settings.adminEmail}.`,
     ]
   },
   ctaText() {
-    return 'Confirm Email'
+    return 'Confirm email'
   },
   ctaURL(opts) {
     return opts.confirmEmailUrl
@@ -257,12 +257,12 @@ templates.confirmCode = NoCTAEmailTemplate({
     return 'Confirm your email address'
   },
   message(opts, isPlainText) {
-    const msg = opts.isSecondary
-      ? ['Use this 6-digit code to confirm your email address.']
-      : [
+    const msg = opts.welcomeUser
+      ? [
           `Welcome to Overleaf! We're so glad you joined us.`,
           'Use this 6-digit confirmation code to finish your setup.',
         ]
+      : ['Use this 6-digit code to confirm your email address.']
 
     if (isPlainText && opts.confirmCode) {
       msg.push(opts.confirmCode)
@@ -536,7 +536,14 @@ templates.groupSSOReauthenticate = ctaTemplate({
     ]
   },
   secondaryMessage(opts) {
-    return [``]
+    if (!opts.isManagedUser) {
+      return ['']
+    } else {
+      const passwordResetUrl = `${settings.siteUrl}/user/password/reset`
+      return [
+        `If you’re not currently logged in to Overleaf, you'll need to <a href="${passwordResetUrl}">set a new password</a> to reauthenticate.`,
+      ]
+    }
   },
   ctaURL(opts) {
     return opts.authenticateWithSSO
@@ -854,7 +861,7 @@ templates.SAMLDataCleared = ctaTemplate({
     ]
   },
   ctaText(opts) {
-    return 'Update my Emails and Affiliations'
+    return 'Update my Emails and affiliations'
   },
   ctaURL(opts) {
     return `${settings.siteUrl}/user/settings`
@@ -900,7 +907,7 @@ templates.welcome = ctaTemplate({
     ]
   },
   ctaText() {
-    return 'Confirm Email'
+    return 'Confirm email'
   },
   ctaURL(opts) {
     return opts.confirmEmailUrl

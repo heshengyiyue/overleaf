@@ -80,7 +80,12 @@ async function unmarkAsDeletedByExternalSource(projectId) {
 
 async function deleteUsersProjects(userId) {
   const projects = await Project.find({ owner_ref: userId }).exec()
+  logger.info(
+    { userId, projectCount: projects.length },
+    'found user projects to delete'
+  )
   await promiseMapWithLimit(5, projects, project => deleteProject(project._id))
+  logger.info({ userId }, 'deleted all user projects')
   await CollaboratorsHandler.promises.removeUserFromAllProjects(userId)
 }
 
@@ -90,7 +95,7 @@ async function expireDeletedProjectsAfterDuration() {
       'deleterData.deletedAt': {
         $lt: new Date(moment().subtract(EXPIRE_PROJECTS_AFTER_DAYS, 'days')),
       },
-      project: { $ne: null },
+      project: { $type: 'object' },
     },
     { 'deleterData.deletedProjectId': 1 }
   )
@@ -244,6 +249,7 @@ async function deleteProject(projectId, options = {}) {
       deletedProjectOwnerId: project.owner_ref,
       deletedProjectCollaboratorIds: project.collaberator_refs,
       deletedProjectReadOnlyIds: project.readOnly_refs,
+      deletedProjectReviewerIds: project.reviewer_refs,
       deletedProjectReadWriteTokenAccessIds:
         project.tokenAccessReadAndWrite_refs,
       deletedProjectOverleafId: project.overleaf

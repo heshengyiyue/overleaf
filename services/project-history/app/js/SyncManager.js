@@ -1,14 +1,14 @@
 // @ts-check
 
 import _ from 'lodash'
-import { callbackify, promisify } from 'util'
+import { callbackify, promisify } from 'node:util'
 import { callbackifyMultiResult } from '@overleaf/promise-utils'
 import Settings from '@overleaf/settings'
 import logger from '@overleaf/logger'
 import Metrics from '@overleaf/metrics'
 import OError from '@overleaf/o-error'
-import { File } from 'overleaf-editor-core'
-import { SyncError } from './Errors.js'
+import { File, Range } from 'overleaf-editor-core'
+import { NeedFullProjectStructureResyncError, SyncError } from './Errors.js'
 import { db, ObjectId } from './mongodb.js'
 import * as SnapshotManager from './SnapshotManager.js'
 import * as LockManager from './LockManager.js'
@@ -19,20 +19,13 @@ import * as ErrorRecorder from './ErrorRecorder.js'
 import * as RedisManager from './RedisManager.js'
 import * as HistoryStoreManager from './HistoryStoreManager.js'
 import * as HashManager from './HashManager.js'
-import { isInsert } from './Utils.js'
+import { isInsert, isDelete } from './Utils.js'
 
 /**
- * @typedef {import('overleaf-editor-core').Comment} HistoryComment
- * @typedef {import('overleaf-editor-core').TrackedChange} HistoryTrackedChange
- * @typedef {import('./types').Comment} Comment
- * @typedef {import('./types').Entity} Entity
- * @typedef {import('./types').ResyncDocContentUpdate} ResyncDocContentUpdate
- * @typedef {import('./types').RetainOp} RetainOp
- * @typedef {import('./types').TrackedChange} TrackedChange
- * @typedef {import('./types').TrackedChangeTransition} TrackedChangeTransition
- * @typedef {import('./types').TrackingDirective} TrackingDirective
- * @typedef {import('./types').TrackingType} TrackingType
- * @typedef {import('./types').Update} Update
+ * @import { Comment as HistoryComment, TrackedChange as HistoryTrackedChange } from 'overleaf-editor-core'
+ * @import { Comment, Entity, ResyncDocContentUpdate, RetainOp, TrackedChange } from './types'
+ * @import { TrackedChangeTransition, TrackingDirective, TrackingType, Update } from './types'
+ * @import { ProjectStructureUpdate } from './types'
  */
 const MAX_RESYNC_HISTORY_RECORDS = 100 // keep this many records of previous resyncs
 const EXPIRE_RESYNC_HISTORY_INTERVAL_MS = 90 * 24 * 3600 * 1000 // 90 days
@@ -60,15 +53,13 @@ async function startResync(projectId, options = {}) {
     await LockManager.promises.runWithLock(
       keys.projectHistoryLock({ project_id: projectId }),
       async extendLock => {
-        await _startResyncWithoutLock(projectId, options)
+        await startResyncWithoutLock(projectId, options)
       }
     )
   } catch (error) {
     // record error in starting sync ("sync ongoing")
-    try {
+    if (error instanceof Error) {
       await ErrorRecorder.promises.record(projectId, -1, error)
-    } catch (err) {
-      // swallow any error thrown by ErrorRecorder.record()
     }
     throw error
   }
@@ -83,17 +74,20 @@ async function startHardResync(projectId, options = {}) {
         await clearResyncState(projectId)
         await RedisManager.promises.clearFirstOpTimestamp(projectId)
         await RedisManager.promises.destroyDocUpdatesQueue(projectId)
-        await _startResyncWithoutLock(projectId, options)
+        await startResyncWithoutLock(projectId, options)
       }
     )
   } catch (error) {
     // record error in starting sync ("sync ongoing")
-    await ErrorRecorder.promises.record(projectId, -1, error)
+    if (error instanceof Error) {
+      await ErrorRecorder.promises.record(projectId, -1, error)
+    }
     throw error
   }
 }
 
-async function _startResyncWithoutLock(projectId, options) {
+// The caller must hold the lock and should record any errors via the ErrorRecorder.
+async function startResyncWithoutLock(projectId, options) {
   await ErrorRecorder.promises.recordSyncStart(projectId)
 
   const syncState = await _getResyncState(projectId)
@@ -103,7 +97,14 @@ async function _startResyncWithoutLock(projectId, options) {
   syncState.setOrigin(options.origin || { kind: 'history-resync' })
   syncState.startProjectStructureSync()
 
-  await WebApiManager.promises.requestResync(projectId)
+  const webOpts = {}
+  if (options.historyRangesMigration) {
+    webOpts.historyRangesMigration = options.historyRangesMigration
+  }
+  if (options.resyncProjectStructureOnly) {
+    webOpts.resyncProjectStructureOnly = options.resyncProjectStructureOnly
+  }
+  await WebApiManager.promises.requestResync(projectId, webOpts)
   await setResyncState(projectId, syncState)
 }
 
@@ -159,6 +160,29 @@ async function clearResyncState(projectId) {
   })
 }
 
+/**
+ * @param {string} projectId
+ * @param {Date} date
+ * @return {Promise<void>}
+ */
+async function clearResyncStateIfAllAfter(projectId, date) {
+  const rawSyncState = await db.projectHistorySyncState.findOne({
+    project_id: new ObjectId(projectId.toString()),
+  })
+  if (!rawSyncState) return // already cleared
+  const state = SyncState.fromRaw(projectId, rawSyncState)
+  if (state.isSyncOngoing()) return // new sync started
+  for (const { timestamp } of rawSyncState.history) {
+    if (timestamp < date) return // preserve old resync states
+  }
+  // expiresAt is cleared when starting a sync and bumped when making changes.
+  // Use expiresAt as read to ensure we only clear the confirmed state.
+  await db.projectHistorySyncState.deleteOne({
+    project_id: new ObjectId(projectId.toString()),
+    expiresAt: rawSyncState.expiresAt,
+  })
+}
+
 async function skipUpdatesDuringSync(projectId, updates) {
   const syncState = await _getResyncState(projectId)
   if (!syncState.isSyncOngoing()) {
@@ -181,9 +205,18 @@ async function skipUpdatesDuringSync(projectId, updates) {
   return { updates: filteredUpdates, syncState }
 }
 
+/**
+ * @param {string} projectId
+ * @param {string} projectHistoryId
+ * @param {{chunk: import('overleaf-editor-core/lib/types.js').RawChunk}} mostRecentChunk
+ * @param {Array<Update>} updates
+ * @param {() => Promise<void>} extendLock
+ * @return {Promise<Array<Update>>}
+ */
 async function expandSyncUpdates(
   projectId,
   projectHistoryId,
+  mostRecentChunk,
   updates,
   extendLock
 ) {
@@ -198,10 +231,11 @@ async function expandSyncUpdates(
   const syncState = await _getResyncState(projectId)
 
   // compute the current snapshot from the most recent chunk
-  const snapshotFiles = await SnapshotManager.promises.getLatestSnapshot(
-    projectId,
-    projectHistoryId
-  )
+  const snapshotFiles =
+    await SnapshotManager.promises.getLatestSnapshotFilesForChunk(
+      projectHistoryId,
+      mostRecentChunk
+    )
 
   // check if snapshot files are valid
   const invalidFiles = _.pickBy(
@@ -274,8 +308,10 @@ class SyncState {
         })
       }
 
-      for (const doc of update.resyncProjectStructure.docs) {
-        this.startDocContentSync(doc.path)
+      if (!update.resyncProjectStructureOnly) {
+        for (const doc of update.resyncProjectStructure.docs) {
+          this.startDocContentSync(doc.path)
+        }
       }
 
       this.stopProjectStructureSync()
@@ -373,7 +409,7 @@ class SyncUpdateExpander {
   constructor(projectId, snapshotFiles, origin) {
     this.projectId = projectId
     this.files = snapshotFiles
-    this.expandedUpdates = []
+    this.expandedUpdates = /** @type ProjectStructureUpdate[] */ []
     this.origin = origin
   }
 
@@ -467,6 +503,29 @@ class SyncUpdateExpander {
         expectedBinaryFiles,
         persistedBinaryFiles
       )
+      this.queueSetMetadataOpsForLinkedFiles(update)
+
+      if (update.resyncProjectStructureOnly) {
+        const docPaths = new Set()
+        for (const entity of update.resyncProjectStructure.docs) {
+          const path = UpdateTranslator._convertPathname(entity.path)
+          docPaths.add(path)
+        }
+        for (const expandedUpdate of this.expandedUpdates) {
+          if (docPaths.has(expandedUpdate.pathname)) {
+            // Clear the resync state and queue entry, we need to start over.
+            this.expandedUpdates = []
+            await clearResyncState(this.projectId)
+            await RedisManager.promises.deleteAppliedDocUpdate(
+              this.projectId,
+              update
+            )
+            throw new NeedFullProjectStructureResyncError(
+              'aborting partial resync: touched doc'
+            )
+          }
+        }
+      }
     } else if ('resyncDocContent' in update) {
       logger.debug(
         { projectId: this.projectId, update },
@@ -532,12 +591,56 @@ class SyncUpdateExpander {
         this.files[update.pathname] = File.fromString('')
       } else {
         update.file = entity.file
-        update.url = entity.url
+        if (entity.url) update.url = entity.url
+        if (entity._hash) update.hash = entity._hash
+        if (entity.createdBlob) update.createdBlob = entity.createdBlob
+        if (entity.metadata) update.metadata = entity.metadata
       }
 
       this.expandedUpdates.push(update)
       Metrics.inc('project_history_resync_operation', 1, {
         status: 'add missing file',
+      })
+    }
+  }
+
+  queueSetMetadataOpsForLinkedFiles(update) {
+    const allEntities = update.resyncProjectStructure.docs.concat(
+      update.resyncProjectStructure.files
+    )
+    for (const file of allEntities) {
+      const pathname = UpdateTranslator._convertPathname(file.path)
+      const matchingAddFileOperation = this.expandedUpdates.some(
+        // Look for an addFile operation that already syncs the metadata.
+        u => u.pathname === pathname && u.metadata === file.metadata
+      )
+      if (matchingAddFileOperation) continue
+      const metaData = this.files[pathname].getMetadata()
+
+      let shouldUpdate = false
+      if (file.metadata) {
+        // check for in place update of linked-file
+        shouldUpdate = Object.entries(file.metadata).some(
+          ([k, v]) => metaData[k] !== v
+        )
+      } else if (metaData.provider) {
+        // overwritten by non-linked-file with same hash
+        // or overwritten by doc
+        shouldUpdate = true
+      }
+      if (!shouldUpdate) continue
+
+      this.expandedUpdates.push({
+        pathname,
+        meta: {
+          resync: true,
+          origin: this.origin,
+          ts: update.meta.ts,
+        },
+        metadata: file.metadata || {},
+      })
+      Metrics.inc('project_history_resync_operation', 1, {
+        status: 'update metadata',
       })
     }
   }
@@ -578,8 +681,11 @@ class SyncUpdateExpander {
           ts: update.meta.ts,
         },
         file: entity.file,
-        url: entity.url,
       }
+      if (entity.url) addUpdate.url = entity.url
+      if (entity._hash) addUpdate.hash = entity._hash
+      if (entity.createdBlob) addUpdate.createdBlob = entity.createdBlob
+      if (entity.metadata) addUpdate.metadata = entity.metadata
       this.expandedUpdates.push(addUpdate)
       Metrics.inc('project_history_resync_operation', 1, {
         status: 'update binary file contents',
@@ -637,12 +743,24 @@ class SyncUpdateExpander {
     }
 
     if (!hashesMatch) {
-      await this.queueUpdateForOutOfSyncContent(
+      const expandedUpdate = await this.queueUpdateForOutOfSyncContent(
         update,
         pathname,
         persistedContent,
         expectedContent
       )
+      if (expandedUpdate != null) {
+        // Adjust the ranges for the changes that have been made to the content
+        for (const op of expandedUpdate.op) {
+          if (isInsert(op)) {
+            file.getComments().applyInsert(new Range(op.p, op.i.length))
+            file.getTrackedChanges().applyInsert(op.p, op.i)
+          } else if (isDelete(op)) {
+            file.getComments().applyDelete(new Range(op.p, op.d.length))
+            file.getTrackedChanges().applyDelete(op.p, op.d.length)
+          }
+        }
+      }
     }
 
     const persistedComments = file.getComments().toArray()
@@ -683,7 +801,7 @@ class SyncUpdateExpander {
       expectedContent
     )
     if (op.length === 0) {
-      return
+      return null
     }
     const expandedUpdate = {
       doc: update.doc,
@@ -704,6 +822,7 @@ class SyncUpdateExpander {
     Metrics.inc('project_history_resync_operation', 1, {
       status: 'update text file contents',
     })
+    return expandedUpdate
   }
 
   /**
@@ -1037,6 +1156,7 @@ function trackingDirectivesEqual(a, b) {
 // EXPORTS
 
 const startResyncCb = callbackify(startResync)
+const startResyncWithoutLockCb = callbackify(startResyncWithoutLock)
 const startHardResyncCb = callbackify(startHardResync)
 const setResyncStateCb = callbackify(setResyncState)
 const clearResyncStateCb = callbackify(clearResyncState)
@@ -1044,15 +1164,31 @@ const skipUpdatesDuringSyncCb = callbackifyMultiResult(skipUpdatesDuringSync, [
   'updates',
   'syncState',
 ])
+
+/**
+ * @param {string} projectId
+ * @param {string} projectHistoryId
+ * @param {{chunk: import('overleaf-editor-core/lib/types.js').RawChunk}} mostRecentChunk
+ * @param {Array<Update>} updates
+ * @param {() => void} extendLock
+ * @param {(err: Error | null, updates?: Array<Update>) => void} callback
+ */
 const expandSyncUpdatesCb = (
   projectId,
   projectHistoryId,
+  mostRecentChunk,
   updates,
   extendLock,
   callback
 ) => {
   const extendLockPromises = promisify(extendLock)
-  expandSyncUpdates(projectId, projectHistoryId, updates, extendLockPromises)
+  expandSyncUpdates(
+    projectId,
+    projectHistoryId,
+    mostRecentChunk,
+    updates,
+    extendLockPromises
+  )
     .then(result => {
       callback(null, result)
     })
@@ -1063,6 +1199,7 @@ const expandSyncUpdatesCb = (
 
 export {
   startResyncCb as startResync,
+  startResyncWithoutLockCb as startResyncWithoutLock,
   startHardResyncCb as startHardResync,
   setResyncStateCb as setResyncState,
   clearResyncStateCb as clearResyncState,
@@ -1072,9 +1209,11 @@ export {
 
 export const promises = {
   startResync,
+  startResyncWithoutLock,
   startHardResync,
   setResyncState,
   clearResyncState,
+  clearResyncStateIfAllAfter,
   skipUpdatesDuringSync,
   expandSyncUpdates,
 }

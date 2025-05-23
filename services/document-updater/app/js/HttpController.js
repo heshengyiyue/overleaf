@@ -6,31 +6,10 @@ const Errors = require('./Errors')
 const logger = require('@overleaf/logger')
 const Settings = require('@overleaf/settings')
 const Metrics = require('./Metrics')
-const ProjectFlusher = require('./ProjectFlusher')
 const DeleteQueueManager = require('./DeleteQueueManager')
 const { getTotalSizeOfLines } = require('./Limits')
 const async = require('async')
-
-module.exports = {
-  getDoc,
-  peekDoc,
-  getProjectDocsAndFlushIfOld,
-  clearProjectState,
-  setDoc,
-  flushDocIfLoaded,
-  deleteDoc,
-  flushProject,
-  deleteProject,
-  deleteMultipleProjects,
-  acceptChanges,
-  resolveComment,
-  reopenComment,
-  deleteComment,
-  updateProject,
-  resyncProjectHistory,
-  flushAllProjects,
-  flushQueuedProjects,
-}
+const { StringFileData } = require('overleaf-editor-core')
 
 function getDoc(req, res, next) {
   let fromVersion
@@ -49,7 +28,7 @@ function getDoc(req, res, next) {
     projectId,
     docId,
     fromVersion,
-    (error, lines, version, ops, ranges, pathname) => {
+    (error, lines, version, ops, ranges, pathname, _projectHistoryId, type) => {
       timer.done()
       if (error) {
         return next(error)
@@ -58,6 +37,11 @@ function getDoc(req, res, next) {
       if (lines == null || version == null) {
         return next(new Errors.NotFoundError('document not found'))
       }
+      if (!Array.isArray(lines) && req.query.historyOTSupport !== 'true') {
+        const file = StringFileData.fromRaw(lines)
+        // TODO(24596): tc support for history-ot
+        lines = file.getLines()
+      }
       res.json({
         id: docId,
         lines,
@@ -65,7 +49,32 @@ function getDoc(req, res, next) {
         ops,
         ranges,
         pathname,
+        ttlInS: RedisManager.DOC_OPS_TTL,
+        type,
       })
+    }
+  )
+}
+
+function getComment(req, res, next) {
+  const docId = req.params.doc_id
+  const projectId = req.params.project_id
+  const commentId = req.params.comment_id
+
+  logger.debug({ projectId, docId, commentId }, 'getting comment via http')
+
+  DocumentManager.getCommentWithLock(
+    projectId,
+    docId,
+    commentId,
+    (error, comment) => {
+      if (error) {
+        return next(error)
+      }
+      if (comment == null) {
+        return next(new Errors.NotFoundError('comment not found'))
+      }
+      res.json(comment)
     }
   )
 }
@@ -81,6 +90,11 @@ function peekDoc(req, res, next) {
     }
     if (lines == null || version == null) {
       return next(new Errors.NotFoundError('document not found'))
+    }
+    if (!Array.isArray(lines) && req.query.historyOTSupport !== 'true') {
+      const file = StringFileData.fromRaw(lines)
+      // TODO(24596): tc support for history-ot
+      lines = file.getLines()
     }
     res.json({ id: docId, lines, version })
   })
@@ -127,6 +141,22 @@ function getProjectDocsAndFlushIfOld(req, res, next) {
   )
 }
 
+function getProjectLastUpdatedAt(req, res, next) {
+  const projectId = req.params.project_id
+  ProjectManager.getProjectDocsTimestamps(projectId, (err, timestamps) => {
+    if (err) return next(err)
+
+    // Filter out nulls. This can happen when
+    // - docs get flushed between the listing and getting the individual docs ts
+    // - a doc flush failed half way (doc keys removed, project tracking not updated)
+    timestamps = timestamps.filter(ts => !!ts)
+
+    timestamps = timestamps.map(ts => parseInt(ts, 10))
+    timestamps.sort((a, b) => (a > b ? 1 : -1))
+    res.json({ lastUpdatedAt: timestamps.pop() })
+  })
+}
+
 function clearProjectState(req, res, next) {
   const projectId = req.params.project_id
   const timer = new Metrics.Timer('http.clearProjectState')
@@ -165,12 +195,42 @@ function setDoc(req, res, next) {
     source,
     userId,
     undoing,
+    true,
     (error, result) => {
       timer.done()
       if (error) {
         return next(error)
       }
       logger.debug({ projectId, docId }, 'set doc via http')
+      res.json(result)
+    }
+  )
+}
+
+function appendToDoc(req, res, next) {
+  const docId = req.params.doc_id
+  const projectId = req.params.project_id
+  const { lines, source, user_id: userId } = req.body
+  const timer = new Metrics.Timer('http.appendToDoc')
+  DocumentManager.appendToDocWithLock(
+    projectId,
+    docId,
+    lines,
+    source,
+    userId,
+    (error, result) => {
+      timer.done()
+      if (error instanceof Errors.FileTooLargeError) {
+        logger.warn('refusing to append to file, it would become too large')
+        return res.sendStatus(422)
+      }
+      if (error) {
+        return next(error)
+      }
+      logger.debug(
+        { projectId, docId, lines, source, userId },
+        'appending to doc via http'
+      )
       res.json(result)
     }
   )
@@ -401,17 +461,33 @@ function updateProject(req, res, next) {
 
 function resyncProjectHistory(req, res, next) {
   const projectId = req.params.project_id
-  const { projectHistoryId, docs, files } = req.body
+  const {
+    projectHistoryId,
+    docs,
+    files,
+    historyRangesMigration,
+    resyncProjectStructureOnly,
+  } = req.body
 
   logger.debug(
     { projectId, docs, files },
     'queuing project history resync via http'
   )
+
+  const opts = {}
+  if (historyRangesMigration) {
+    opts.historyRangesMigration = historyRangesMigration
+  }
+  if (resyncProjectStructureOnly) {
+    opts.resyncProjectStructureOnly = resyncProjectStructureOnly
+  }
+
   HistoryManager.resyncProjectHistory(
     projectId,
     projectHistoryId,
     docs,
     files,
+    opts,
     error => {
       if (error) {
         return next(error)
@@ -420,23 +496,6 @@ function resyncProjectHistory(req, res, next) {
       res.sendStatus(204)
     }
   )
-}
-
-function flushAllProjects(req, res, next) {
-  res.setTimeout(5 * 60 * 1000)
-  const options = {
-    limit: req.query.limit || 1000,
-    concurrency: req.query.concurrency || 5,
-    dryRun: req.query.dryRun || false,
-  }
-  ProjectFlusher.flushAllProjects(options, (err, projectIds) => {
-    if (err) {
-      logger.err({ err }, 'error bulk flushing projects')
-      res.sendStatus(500)
-    } else {
-      res.send(projectIds)
-    }
-  })
 }
 
 function flushQueuedProjects(req, res, next) {
@@ -455,4 +514,58 @@ function flushQueuedProjects(req, res, next) {
       res.send({ flushed })
     }
   })
+}
+
+/**
+ * Block a project from getting loaded in docupdater
+ *
+ * The project is blocked only if it's not already loaded in docupdater. The
+ * response indicates whether the project has been blocked or not.
+ */
+function blockProject(req, res, next) {
+  const projectId = req.params.project_id
+  RedisManager.blockProject(projectId, (err, blocked) => {
+    if (err) {
+      return next(err)
+    }
+    res.json({ blocked })
+  })
+}
+
+/**
+ * Unblock a project
+ */
+function unblockProject(req, res, next) {
+  const projectId = req.params.project_id
+  RedisManager.unblockProject(projectId, (err, wasBlocked) => {
+    if (err) {
+      return next(err)
+    }
+    res.json({ wasBlocked })
+  })
+}
+
+module.exports = {
+  getDoc,
+  peekDoc,
+  getProjectDocsAndFlushIfOld,
+  getProjectLastUpdatedAt,
+  clearProjectState,
+  appendToDoc,
+  setDoc,
+  flushDocIfLoaded,
+  deleteDoc,
+  flushProject,
+  deleteProject,
+  deleteMultipleProjects,
+  acceptChanges,
+  resolveComment,
+  reopenComment,
+  deleteComment,
+  updateProject,
+  resyncProjectHistory,
+  flushQueuedProjects,
+  blockProject,
+  unblockProject,
+  getComment,
 }

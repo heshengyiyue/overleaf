@@ -1,27 +1,36 @@
-import { forwardRef } from 'react'
 import ReCAPTCHA from 'react-google-recaptcha'
+import getMeta from '@/utils/meta'
+import { ExposedSettings } from '../../../../types/exposed-settings'
 
-const siteKey = window.ExposedSettings.recaptchaSiteKey
-const recaptchaDisabled = window.ExposedSettings.recaptchaDisabled
-type Page = keyof typeof recaptchaDisabled
+interface ReCaptcha2Props
+  extends Pick<React.ComponentProps<typeof ReCAPTCHA>, 'onChange'> {
+  page: keyof ExposedSettings['recaptchaDisabled']
+  recaptchaRef: React.LegacyRef<ReCAPTCHA>
+}
 
-export const ReCaptcha2 = forwardRef<
-  ReCAPTCHA,
-  { page: Page; onChange?: (token: string | null) => void }
->(function ReCaptcha2({ page: site, onChange }, ref) {
-  if (!siteKey) {
+export function ReCaptcha2({
+  page: site,
+  onChange,
+  recaptchaRef,
+}: ReCaptcha2Props) {
+  const { recaptchaSiteKey, recaptchaDisabled } = getMeta('ol-ExposedSettings')
+
+  if (!recaptchaSiteKey) {
     return null
   }
   if (site && recaptchaDisabled[site]) {
     return null
   }
+  if (process.env.NODE_ENV === 'development' && window.Cypress) {
+    return null // Disable captcha for E2E tests in dev-env.
+  }
   return (
     <ReCAPTCHA
-      ref={ref}
+      ref={recaptchaRef}
       size="invisible"
-      sitekey={siteKey}
+      sitekey={recaptchaSiteKey}
       onChange={onChange}
       badge="inline"
     />
   )
-})
+}

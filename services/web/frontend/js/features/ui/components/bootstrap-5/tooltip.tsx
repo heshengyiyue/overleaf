@@ -1,24 +1,18 @@
 import { cloneElement, useEffect, forwardRef } from 'react'
-import { OverlayTrigger, Tooltip as BSTooltip } from 'react-bootstrap-5'
+import {
+  OverlayTrigger,
+  OverlayTriggerProps,
+  Tooltip as BSTooltip,
+  TooltipProps as BSTooltipProps,
+} from 'react-bootstrap'
 import { callFnsInSequence } from '@/utils/functions'
 
-type OverlayProps = Omit<
-  React.ComponentProps<typeof OverlayTrigger>,
-  'overlay' | 'children'
->
+type OverlayProps = Omit<OverlayTriggerProps, 'overlay' | 'children'>
 
-type UpdatingTooltipProps = {
-  popper: {
-    scheduleUpdate: () => void
-  }
-  show: boolean
-  [x: string]: unknown
-}
-
-const UpdatingTooltip = forwardRef<HTMLDivElement, UpdatingTooltipProps>(
+const UpdatingTooltip = forwardRef<HTMLDivElement, BSTooltipProps>(
   ({ popper, children, show: _, ...props }, ref) => {
     useEffect(() => {
-      popper.scheduleUpdate()
+      popper?.scheduleUpdate?.()
     }, [children, popper])
 
     return (
@@ -34,7 +28,7 @@ export type TooltipProps = {
   description: React.ReactNode
   id: string
   overlayProps?: OverlayProps
-  tooltipProps?: React.ComponentProps<typeof BSTooltip>
+  tooltipProps?: BSTooltipProps
   hidden?: boolean
   children: React.ReactElement
 }

@@ -4,28 +4,29 @@
 
 @include media-breakpoint-up(sm) {
   .modal-dialog {
-    @include modal-md();
+    @include modal-md;
   }
 
   .modal-sm {
-    @include modal-sm();
+    @include modal-sm;
   }
 }
 
 @include media-breakpoint-up(md) {
   .modal-md {
-    @include modal-md();
+    @include modal-md;
   }
 }
 
 @include media-breakpoint-up(lg) {
   .modal-lg {
-    @include modal-lg();
+    @include modal-lg;
   }
 }
 
 .modal-content {
-  @include shadow-lg();
+  @include shadow-lg;
+
   border-radius: var(--border-radius-base);
 
   .modal-header {
@@ -34,6 +35,7 @@
 
       line-height: 35px;
     }
+
     .btn-close {
       margin-right: 0;
     }
@@ -42,6 +44,7 @@
   .modal-footer {
     padding: var(--spacing-06);
     gap: var(--spacing-04);
+
     > * {
       margin: 0;
     }
@@ -83,11 +86,25 @@
   margin-top: var(--spacing-05);
 }
 
-// Contact us modal
-.contact-us-modal-textarea {
-  height: 120px;
-}
+.upgrade-track-changes-modal {
+  .teaser-title {
+    font-family: var(--font-sans);
+    font-size: var(--font-size-05);
+    margin-bottom: var(--spacing-05);
+    margin-top: var(--spacing-05);
+    color: var(--content-secondary);
+  }
 
-.modal-form-messages .notification {
-  margin-bottom: var(--spacing-05);
+  ul.list-unstyled li {
+    font-family: var(--font-sans);
+    padding: var(--spacing-02) 0;
+    color: var(--content-secondary);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-04);
+  }
+
+  ul.list-unstyled li .check-icon {
+    padding-top: 2px;
+  }
 }

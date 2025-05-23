@@ -376,7 +376,7 @@ describe('<PdfSynctexControls/>', function () {
         role: 'detached',
         event: 'action-sync-to-code',
         data: {
-          args: [mockPosition, 72],
+          args: [{ visualOffset: 72 }],
         },
       })
     })
@@ -405,7 +405,7 @@ describe('<PdfSynctexControls/>', function () {
         'not.be.disabled'
       )
 
-      cy.get('.synctex-spin-icon').should('not.exist')
+      cy.findByRole('status', { hidden: true }).should('not.exist')
 
       cy.wrap(null).then(() => {
         testDetachChannel.postMessage({
@@ -419,7 +419,7 @@ describe('<PdfSynctexControls/>', function () {
         'be.disabled'
       )
 
-      cy.get('.synctex-spin-icon').should('have.length', 1)
+      cy.findByRole('status', { hidden: true }).should('have.length', 1)
 
       cy.wrap(null).then(() => {
         testDetachChannel.postMessage({

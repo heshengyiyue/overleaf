@@ -1,5 +1,5 @@
 /* global io */
-import '../../../../../frontend/js/marketing'
+import '@/marketing'
 import {
   inflightHelper,
   toggleDisplay,
@@ -72,17 +72,6 @@ function setUpStatusIndicators() {
         })
       }).finally(() => {
         socket.disconnect()
-      })
-    }
-  )
-
-  setUpStatusIndicator(
-    document.querySelector('[data-ol-launchpad-check="ide"]'),
-    () => {
-      return fetch(getMeta('ol-ideJsPath')).then(res => {
-        if (!res.ok) {
-          throw new Error(`Http status: ${res.status}`)
-        }
       })
     }
   )

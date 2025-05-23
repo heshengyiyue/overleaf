@@ -30,11 +30,12 @@ const ClearTrackingProps = require('../file_data/clear_tracking_props')
 const TrackingProps = require('../file_data/tracking_props')
 
 /**
- * @typedef {import('../file_data/string_file_data')} StringFileData
- * @typedef {import('../types').RawTextOperation} RawTextOperation
- * @typedef {import('../operation/scan_op').ScanOp} ScanOp
- * @typedef {import('../file_data/tracked_change_list')} TrackedChangeList
- * @typedef {import('../types').TrackingDirective} TrackingDirective
+ * @import StringFileData from '../file_data/string_file_data'
+ * @import { RawTextOperation, TrackingDirective } from '../types'
+ * @import { ScanOp } from '../operation/scan_op'
+ * @import TrackedChangeList from '../file_data/tracked_change_list'
+ *
+ * @typedef {{tracking?: TrackingProps, commentIds?: string[]}} InsertOptions
  */
 
 /**
@@ -55,20 +56,40 @@ class TextOperation extends EditOperation {
 
   constructor() {
     super()
-    // When an operation is applied to an input string, you can think of this as
-    // if an imaginary cursor runs over the entire string and skips over some
-    // parts, removes some parts and inserts characters at some positions. These
-    // actions (skip/remove/insert) are stored as an array in the "ops" property.
-    /** @type {ScanOp[]} */
+
+    /**
+     * When an operation is applied to an input string, you can think of this as
+     * if an imaginary cursor runs over the entire string and skips over some
+     * parts, removes some parts and inserts characters at some positions. These
+     * actions (skip/remove/insert) are stored as an array in the "ops" property.
+     * @type {ScanOp[]}
+     */
     this.ops = []
-    // An operation's baseLength is the length of every string the operation
-    // can be applied to.
+
+    /**
+     * An operation's baseLength is the length of every string the operation
+     * can be applied to.
+     */
     this.baseLength = 0
-    // The targetLength is the length of every string that results from applying
-    // the operation on a valid input string.
+
+    /**
+     * The targetLength is the length of every string that results from applying
+     * the operation on a valid input string.
+     */
     this.targetLength = 0
+
+    /**
+     * The expected content hash after this operation is applied
+     *
+     * @type {string | null}
+     */
+    this.contentHash = null
   }
 
+  /**
+   * @param {TextOperation} other
+   * @return {boolean}
+   */
   equals(other) {
     if (this.baseLength !== other.baseLength) {
       return false
@@ -129,7 +150,7 @@ class TextOperation extends EditOperation {
   /**
    * Insert a string at the current position.
    * @param {string | {i: string}} insertValue
-   * @param {{tracking?: TrackingProps, commentIds?: string[]}} opts
+   * @param {InsertOptions} opts
    * @returns {TextOperation}
    */
   insert(insertValue, opts = {}) {
@@ -218,7 +239,12 @@ class TextOperation extends EditOperation {
    * @returns {RawTextOperation}
    */
   toJSON() {
-    return { textOperation: this.ops.map(op => op.toJSON()) }
+    /** @type {RawTextOperation} */
+    const json = { textOperation: this.ops.map(op => op.toJSON()) }
+    if (this.contentHash != null) {
+      json.contentHash = this.contentHash
+    }
+    return json
   }
 
   /**
@@ -226,7 +252,7 @@ class TextOperation extends EditOperation {
    * @param {RawTextOperation} obj
    * @returns {TextOperation}
    */
-  static fromJSON = function ({ textOperation: ops }) {
+  static fromJSON = function ({ textOperation: ops, contentHash }) {
     const o = new TextOperation()
     for (const op of ops) {
       if (isRetain(op)) {
@@ -244,6 +270,9 @@ class TextOperation extends EditOperation {
       } else {
         throw new UnprocessableError('unknown operation: ' + JSON.stringify(op))
       }
+    }
+    if (contentHash != null) {
+      o.contentHash = contentHash
     }
     return o
   }
@@ -328,6 +357,8 @@ class TextOperation extends EditOperation {
 
   /**
    * @inheritdoc
+   * @param {number} length of the original string; non-negative
+   * @return {number} length of the new string; non-negative
    */
   applyToLength(length) {
     const operation = this
@@ -573,6 +604,7 @@ class TextOperation extends EditOperation {
           op1 = ops1[i1++]
         }
       } else if (op1 instanceof InsertOp && op2 instanceof RetainOp) {
+        /** @type InsertOptions */
         const opts = {
           commentIds: op1.commentIds,
         }
@@ -807,6 +839,10 @@ function getSimpleOp(operation) {
   return null
 }
 
+/**
+ * @param {TextOperation} operation
+ * @return {number}
+ */
 function getStartIndex(operation) {
   if (operation.ops[0] instanceof RetainOp) {
     return operation.ops[0].length
@@ -843,7 +879,10 @@ function calculateTrackingCommentSegments(
   const breaks = new Set()
   const opStart = cursor
   const opEnd = cursor + length
-  // Utility function to limit breaks to the boundary set by the operation range
+  /**
+   * Utility function to limit breaks to the boundary set by the operation range
+   * @param {number} rangeBoundary
+   */
   function addBreak(rangeBoundary) {
     if (rangeBoundary < opStart || rangeBoundary > opEnd) {
       return

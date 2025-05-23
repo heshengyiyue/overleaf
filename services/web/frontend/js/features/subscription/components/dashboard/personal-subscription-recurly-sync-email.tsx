@@ -1,14 +1,16 @@
 import { useTranslation, Trans } from 'react-i18next'
 import { useSubscriptionDashboardContext } from '../../context/subscription-dashboard-context'
-import { FormGroup, Alert } from 'react-bootstrap'
 import getMeta from '../../../../utils/meta'
 import useAsync from '../../../../shared/hooks/use-async'
 import { postJSON } from '../../../../infrastructure/fetch-json'
+import OLNotification from '@/features/ui/components/ol/ol-notification'
+import OLButton from '@/features/ui/components/ol/ol-button'
+import OLFormGroup from '@/features/ui/components/ol/ol-form-group'
 
 function PersonalSubscriptionRecurlySyncEmail() {
   const { t } = useTranslation()
   const { personalSubscription } = useSubscriptionDashboardContext()
-  const userEmail = getMeta('ol-usersEmail') as string
+  const userEmail = getMeta('ol-usersEmail')
   const { isLoading, isSuccess, runAsync } = useAsync()
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -16,18 +18,21 @@ function PersonalSubscriptionRecurlySyncEmail() {
     runAsync(postJSON('/user/subscription/account/email'))
   }
 
-  if (!personalSubscription || !('recurly' in personalSubscription)) return null
+  if (!personalSubscription || !('payment' in personalSubscription)) return null
 
-  const recurlyEmail = personalSubscription.recurly.account.email
+  const recurlyEmail = personalSubscription.payment.accountEmail
 
   if (!userEmail || recurlyEmail === userEmail) return null
 
   return (
     <>
       <form onSubmit={handleSubmit}>
-        <FormGroup>
+        <OLFormGroup>
           {isSuccess ? (
-            <Alert bsStyle="success">{t('recurly_email_updated')}</Alert>
+            <OLNotification
+              type="success"
+              content={t('recurly_email_updated')}
+            />
           ) : (
             <>
               <p>
@@ -40,17 +45,19 @@ function PersonalSubscriptionRecurlySyncEmail() {
                 />
               </p>
               <div>
-                <button
-                  className="btn btn-primary"
+                <OLButton
+                  variant="primary"
                   type="submit"
                   disabled={isLoading}
+                  isLoading={isLoading}
+                  loadingLabel={t('updating')}
                 >
-                  {isLoading ? <>{t('updating')}…</> : t('update')}
-                </button>
+                  {t('update')}
+                </OLButton>
               </div>
             </>
           )}
-        </FormGroup>
+        </OLFormGroup>
       </form>
       <hr />
     </>

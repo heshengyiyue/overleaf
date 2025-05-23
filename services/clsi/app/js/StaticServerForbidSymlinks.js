@@ -13,8 +13,8 @@
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
 let ForbidSymlinks
-const Path = require('path')
-const fs = require('fs')
+const Path = require('node:path')
+const fs = require('node:fs')
 const Settings = require('@overleaf/settings')
 const logger = require('@overleaf/logger')
 
@@ -25,9 +25,13 @@ module.exports = ForbidSymlinks = function (staticFn, root, options) {
     let file, projectId, result
     const path = req.url
     // check that the path is of the form /project_id_or_name/path/to/file.log
-    if ((result = path.match(/^\/?([a-zA-Z0-9_-]+)\/(.*)/))) {
+    if ((result = path.match(/^\/([a-zA-Z0-9_-]+)\/(.*)$/s))) {
       projectId = result[1]
       file = result[2]
+      if (path !== `/${projectId}/${file}`) {
+        logger.warn({ path }, 'unrecognized file request')
+        return res.sendStatus(404)
+      }
     } else {
       logger.warn({ path }, 'unrecognized file request')
       return res.sendStatus(404)

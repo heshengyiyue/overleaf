@@ -1,7 +1,7 @@
 // Metrics must be initialized before importing anything else
 require('@overleaf/metrics/initialize')
 
-const Events = require('events')
+const Events = require('node:events')
 const Metrics = require('@overleaf/metrics')
 
 const logger = require('@overleaf/logger')
@@ -22,10 +22,6 @@ Events.setMaxListeners(20)
 const app = express()
 
 app.use(RequestLogger.middleware)
-
-if (settings.sentry && settings.sentry.dsn) {
-  logger.initializeErrorReporting(settings.sentry.dsn)
-}
 
 Metrics.open_sockets.monitor(true)
 Metrics.memory.monitor(logger)
@@ -54,91 +50,68 @@ app.use((req, res, next) => {
 
 Metrics.injectMetricsRoute(app)
 
-app.head(
-  '/project/:project_id/file/:file_id',
-  keyBuilder.userFileKeyMiddleware,
-  fileController.getFileHead
-)
-app.get(
-  '/project/:project_id/file/:file_id',
-  keyBuilder.userFileKeyMiddleware,
-  fileController.getFile
-)
-app.post(
-  '/project/:project_id/file/:file_id',
-  keyBuilder.userFileKeyMiddleware,
-  fileController.insertFile
-)
-app.put(
-  '/project/:project_id/file/:file_id',
-  keyBuilder.userFileKeyMiddleware,
-  bodyParser.json(),
-  fileController.copyFile
-)
-app.delete(
-  '/project/:project_id/file/:file_id',
-  keyBuilder.userFileKeyMiddleware,
-  fileController.deleteFile
-)
-app.delete(
-  '/project/:project_id',
-  keyBuilder.userProjectKeyMiddleware,
-  fileController.deleteProject
-)
+if (settings.filestore.stores.user_files) {
+  app.head(
+    '/project/:project_id/file/:file_id',
+    keyBuilder.userFileKeyMiddleware,
+    fileController.getFileHead
+  )
+  app.get(
+    '/project/:project_id/file/:file_id',
+    keyBuilder.userFileKeyMiddleware,
+    fileController.getFile
+  )
+  app.post(
+    '/project/:project_id/file/:file_id',
+    keyBuilder.userFileKeyMiddleware,
+    fileController.insertFile
+  )
+  app.put(
+    '/project/:project_id/file/:file_id',
+    keyBuilder.userFileKeyMiddleware,
+    bodyParser.json(),
+    fileController.copyFile
+  )
+  app.delete(
+    '/project/:project_id/file/:file_id',
+    keyBuilder.userFileKeyMiddleware,
+    fileController.deleteFile
+  )
+  app.delete(
+    '/project/:project_id',
+    keyBuilder.userProjectKeyMiddleware,
+    fileController.deleteProject
+  )
 
-app.head(
-  '/template/:template_id/v/:version/:format',
-  keyBuilder.templateFileKeyMiddleware,
-  fileController.getFileHead
-)
-app.get(
-  '/template/:template_id/v/:version/:format',
-  keyBuilder.templateFileKeyMiddleware,
-  fileController.getFile
-)
-app.get(
-  '/template/:template_id/v/:version/:format/:sub_type',
-  keyBuilder.templateFileKeyMiddleware,
-  fileController.getFile
-)
-app.post(
-  '/template/:template_id/v/:version/:format',
-  keyBuilder.templateFileKeyMiddleware,
-  fileController.insertFile
-)
+  app.get(
+    '/project/:project_id/size',
+    keyBuilder.userProjectKeyMiddleware,
+    fileController.directorySize
+  )
+}
 
-app.head(
-  '/project/:project_id/public/:public_file_id',
-  keyBuilder.publicFileKeyMiddleware,
-  fileController.getFileHead
-)
-app.get(
-  '/project/:project_id/public/:public_file_id',
-  keyBuilder.publicFileKeyMiddleware,
-  fileController.getFile
-)
-app.post(
-  '/project/:project_id/public/:public_file_id',
-  keyBuilder.publicFileKeyMiddleware,
-  fileController.insertFile
-)
-app.put(
-  '/project/:project_id/public/:public_file_id',
-  keyBuilder.publicFileKeyMiddleware,
-  bodyParser.json(),
-  fileController.copyFile
-)
-app.delete(
-  '/project/:project_id/public/:public_file_id',
-  keyBuilder.publicFileKeyMiddleware,
-  fileController.deleteFile
-)
-
-app.get(
-  '/project/:project_id/size',
-  keyBuilder.publicProjectKeyMiddleware,
-  fileController.directorySize
-)
+if (settings.filestore.stores.template_files) {
+  app.head(
+    '/template/:template_id/v/:version/:format',
+    keyBuilder.templateFileKeyMiddleware,
+    fileController.getFileHead
+  )
+  app.get(
+    '/template/:template_id/v/:version/:format',
+    keyBuilder.templateFileKeyMiddleware,
+    fileController.getFile
+  )
+  app.get(
+    '/template/:template_id/v/:version/:format/:sub_type',
+    keyBuilder.templateFileKeyMiddleware,
+    fileController.getFile
+  )
+  app.post(
+    '/template/:template_id/v/:version/:format',
+    keyBuilder.templateFileKeyMiddleware,
+    fileController.insertFile
+  )
+}
 
 app.get(
   '/bucket/:bucket/key/*',
@@ -161,11 +134,12 @@ app.use(RequestLogger.errorHandler)
 const port = settings.internal.filestore.port || 3009
 const host = settings.internal.filestore.host || '0.0.0.0'
 
+let server = null
 if (!module.parent) {
   // Called directly
-  app.listen(port, host, error => {
+  server = app.listen(port, host, error => {
     if (error) {
-      logger.error('Error starting Filestore', error)
+      logger.error({ err: error }, 'Error starting Filestore')
       throw error
     }
     logger.debug(`Filestore starting up, listening on ${host}:${port}`)
@@ -189,9 +163,24 @@ function handleShutdownSignal(signal) {
   }
   settings.shuttingDown = true
   settings.shutDownTime = Date.now()
+  // stop accepting new connections, the callback is called when existing connections have finished
+  server.close(() => {
+    logger.info({ signal }, 'server closed')
+    // exit after a short delay so logs can be flushed
+    setTimeout(() => {
+      process.exit()
+    }, 100)
+  })
+  // close idle http keep-alive connections
+  server.closeIdleConnections()
   setTimeout(() => {
-    logger.info({ signal }, 'shutting down')
-    process.exit()
+    logger.info({ signal }, 'shutdown timed out, exiting')
+    // close all connections immediately
+    server.closeAllConnections()
+    // exit after a short delay to allow for cleanup
+    setTimeout(() => {
+      process.exit()
+    }, 100)
   }, settings.gracefulShutdownDelayInMs)
 }
 

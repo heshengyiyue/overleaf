@@ -51,6 +51,10 @@ export class MakeTitleWidget extends WidgetType {
     this.destroyed = true
   }
 
+  coordsAt(element: HTMLElement) {
+    return element.getBoundingClientRect()
+  }
+
   buildContent(view: EditorView, element: HTMLElement) {
     if (this.preamble.title) {
       const titleElement = buildTitleElement(
@@ -70,6 +74,7 @@ export class MakeTitleWidget extends WidgetType {
           if (!this.destroyed) {
             await MathJax.typesetPromise([element])
             view.requestMeasure()
+            MathJax.typesetClear([element])
           }
         })
         .catch(() => {

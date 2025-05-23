@@ -1,4 +1,4 @@
-const Path = require('path')
+const Path = require('node:path')
 
 // environment variables renamed for consistency
 // use AWS_ACCESS_KEY_ID-style going forward
@@ -17,18 +17,12 @@ if (process.env.BACKEND == null) {
       process.env.AWS_S3_USER_FILES_BUCKET_NAME
     process.env.TEMPLATE_FILES_BUCKET_NAME =
       process.env.AWS_S3_TEMPLATE_FILES_BUCKET_NAME
-    process.env.PUBLIC_FILES_BUCKET_NAME =
-      process.env.AWS_S3_PUBLIC_FILES_BUCKET_NAME
   } else {
     process.env.BACKEND = 'fs'
     process.env.USER_FILES_BUCKET_NAME = Path.join(__dirname, '../user_files')
     process.env.TEMPLATE_FILES_BUCKET_NAME = Path.join(
       __dirname,
       '../template_files'
-    )
-    process.env.PUBLIC_FILES_BUCKET_NAME = Path.join(
-      __dirname,
-      '../public_files'
     )
   }
 }
@@ -79,7 +73,10 @@ const settings = {
     stores: {
       user_files: process.env.USER_FILES_BUCKET_NAME,
       template_files: process.env.TEMPLATE_FILES_BUCKET_NAME,
-      public_files: process.env.PUBLIC_FILES_BUCKET_NAME,
+
+      // allow signed links to be generated for these buckets
+      project_blobs: process.env.OVERLEAF_EDITOR_PROJECT_BLOBS_BUCKET,
+      global_blobs: process.env.OVERLEAF_EDITOR_BLOBS_BUCKET,
     },
 
     fallback: process.env.FALLBACK_BACKEND
@@ -105,10 +102,6 @@ const settings = {
   },
 
   enableConversions: process.env.ENABLE_CONVERSIONS === 'true',
-
-  sentry: {
-    dsn: process.env.SENTRY_DSN,
-  },
 
   gracefulShutdownDelayInMs:
     parseInt(process.env.GRACEFUL_SHUTDOWN_DELAY_SECONDS ?? '30', 10) * 1000,

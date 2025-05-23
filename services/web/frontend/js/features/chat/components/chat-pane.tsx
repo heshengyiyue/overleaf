@@ -4,15 +4,17 @@ import { useTranslation } from 'react-i18next'
 import MessageInput from './message-input'
 import InfiniteScroll from './infinite-scroll'
 import ChatFallbackError from './chat-fallback-error'
-import Icon from '../../../shared/components/icon'
 import { useLayoutContext } from '../../../shared/context/layout-context'
 import { useUserContext } from '../../../shared/context/user-context'
 import withErrorBoundary from '../../../infrastructure/error-boundary'
 import { FetchError } from '../../../infrastructure/fetch-json'
 import { useChatContext } from '../context/chat-context'
-import LoadingSpinner from '../../../shared/components/loading-spinner'
+import { FullSizeLoadingSpinner } from '../../../shared/components/loading-spinner'
+import MaterialIcon from '@/shared/components/material-icon'
 
 const MessageList = lazy(() => import('./message-list'))
+
+const Loading = () => <FullSizeLoadingSpinner delay={500} className="pt-4" />
 
 const ChatPane = React.memo(function ChatPane() {
   const { t } = useTranslation()
@@ -79,13 +81,12 @@ const ChatPane = React.memo(function ChatPane() {
         itemCount={messageContentCount}
       >
         <div>
-          <h2 className="sr-only">{t('chat')}</h2>
-          <Suspense fallback={<LoadingSpinner delay={500} />}>
-            {status === 'pending' && <LoadingSpinner delay={500} />}
+          <h2 className="visually-hidden">{t('chat')}</h2>
+          <Suspense fallback={<Loading />}>
+            {status === 'pending' && <Loading />}
             {shouldDisplayPlaceholder && <Placeholder />}
             <MessageList
               messages={messages}
-              userId={user.id}
               resetUnreadMessages={markMessagesAsRead}
             />
           </Suspense>
@@ -107,10 +108,10 @@ function Placeholder() {
       <div className="first-message text-center">
         {t('send_first_message')}
         <br />
-        <Icon type="arrow-down" />
+        <MaterialIcon type="arrow_downward" />
       </div>
     </>
   )
 }
 
-export default withErrorBoundary(ChatPane, ChatFallbackError)
+export default withErrorBoundary(ChatPane, () => <ChatFallbackError />)

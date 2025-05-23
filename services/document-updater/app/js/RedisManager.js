@@ -7,7 +7,7 @@ const OError = require('@overleaf/o-error')
 const { promisifyAll } = require('@overleaf/promise-utils')
 const metrics = require('./Metrics')
 const Errors = require('./Errors')
-const crypto = require('crypto')
+const crypto = require('node:crypto')
 const async = require('async')
 const { docIsTooLarge } = require('./Limits')
 
@@ -16,6 +16,7 @@ const { docIsTooLarge } = require('./Limits')
 // after 30 seconds. We can't let any errors in the rest of the stack
 // hold us up, and need to bail out quickly if there is a problem.
 const MAX_REDIS_REQUEST_LENGTH = 5000 // 5 seconds
+const PROJECT_BLOCK_TTL_SECS = 30
 
 // Make times easy to read
 const minutes = 60 // seconds for Redis expire
@@ -47,6 +48,7 @@ const RedisManager = {
       timer.done()
       _callback(error)
     }
+    const shareJSTextOT = Array.isArray(docLines)
     const docLinesArray = docLines
     docLines = JSON.stringify(docLines)
     if (docLines.indexOf('\u0000') !== -1) {
@@ -59,7 +61,10 @@ const RedisManager = {
     // Do an optimised size check on the docLines using the serialised
     // length as an upper bound
     const sizeBound = docLines.length
-    if (docIsTooLarge(sizeBound, docLinesArray, Settings.max_doc_length)) {
+    if (
+      shareJSTextOT && // editor-core has a size check in TextOperation.apply and TextOperation.applyToLength.
+      docIsTooLarge(sizeBound, docLinesArray, Settings.max_doc_length)
+    ) {
       const docSize = docLines.length
       const err = new Error('blocking doc insert into redis: doc is too large')
       logger.error({ projectId, docId, err, docSize }, err.message)
@@ -77,16 +82,34 @@ const RedisManager = {
         logger.error({ err: error, docId, projectId }, error.message)
         return callback(error)
       }
-      setHistoryRangesSupportFlag(docId, historyRangesSupport, err => {
+
+      // update docsInProject set before writing doc contents
+      const multi = rclient.multi()
+      multi.exists(keys.projectBlock({ project_id: projectId }))
+      multi.sadd(keys.docsInProject({ project_id: projectId }), docId)
+      multi.exec((err, reply) => {
         if (err) {
           return callback(err)
         }
-        // update docsInProject set before writing doc contents
-        rclient.sadd(
-          keys.docsInProject({ project_id: projectId }),
+        const projectBlocked = reply[0] === 1
+        if (projectBlocked) {
+          // We don't clean up the spurious docId added in the docsInProject
+          // set. There is a risk that the docId was successfully added by a
+          // concurrent process.  This set is used when unloading projects. An
+          // extra docId will not prevent the project from being uploaded, but
+          // a missing docId means that the doc might stay in Redis forever.
+          return callback(
+            new OError('Project blocked from loading docs', { projectId })
+          )
+        }
+
+        RedisManager.setHistoryRangesSupportFlag(
           docId,
-          error => {
-            if (error) return callback(error)
+          historyRangesSupport,
+          err => {
+            if (err) {
+              return callback(err)
+            }
 
             if (!pathname) {
               metrics.inc('pathname', 1, {
@@ -377,7 +400,8 @@ const RedisManager = {
 
         if (start < firstVersionInRedis || end > version) {
           error = new Errors.OpRangeNotAvailableError(
-            'doc ops range is not loaded in redis'
+            'doc ops range is not loaded in redis',
+            { firstVersionInRedis, version, ttlInS: RedisManager.DOC_OPS_TTL }
           )
           logger.debug(
             { err: error, docId, length, version, start, end },
@@ -441,6 +465,7 @@ const RedisManager = {
     if (appliedOps == null) {
       appliedOps = []
     }
+    const shareJSTextOT = Array.isArray(docLines)
     RedisManager.getDocVersion(docId, (error, currentVersion) => {
       if (error) {
         return callback(error)
@@ -480,7 +505,10 @@ const RedisManager = {
       // Do an optimised size check on the docLines using the serialised
       // length as an upper bound
       const sizeBound = newDocLines.length
-      if (docIsTooLarge(sizeBound, docLines, Settings.max_doc_length)) {
+      if (
+        shareJSTextOT && // editor-core has a size check in TextOperation.apply and TextOperation.applyToLength.
+        docIsTooLarge(sizeBound, docLines, Settings.max_doc_length)
+      ) {
         const err = new Error('blocking doc update: doc is too large')
         const docSize = newDocLines.length
         logger.error({ projectId, docId, err, docSize }, err.message)
@@ -672,6 +700,56 @@ const RedisManager = {
     )
   },
 
+  setHistoryRangesSupportFlag(docId, historyRangesSupport, callback) {
+    if (historyRangesSupport) {
+      rclient.sadd(keys.historyRangesSupport(), docId, callback)
+    } else {
+      rclient.srem(keys.historyRangesSupport(), docId, callback)
+    }
+  },
+
+  blockProject(projectId, callback) {
+    // Make sure that this MULTI operation only operates on project
+    // specific keys, i.e. keys that have the project id in curly braces.
+    // The curly braces identify a hash key for Redis and ensures that
+    // the MULTI's operations are all done on the same node in a
+    // cluster environment.
+    const multi = rclient.multi()
+    multi.setex(
+      keys.projectBlock({ project_id: projectId }),
+      PROJECT_BLOCK_TTL_SECS,
+      '1'
+    )
+    multi.scard(keys.docsInProject({ project_id: projectId }))
+    multi.exec((err, reply) => {
+      if (err) {
+        return callback(err)
+      }
+      const docsInProject = reply[1]
+      if (docsInProject > 0) {
+        // Too late to lock the project
+        rclient.del(keys.projectBlock({ project_id: projectId }), err => {
+          if (err) {
+            return callback(err)
+          }
+          callback(null, false)
+        })
+      } else {
+        callback(null, true)
+      }
+    })
+  },
+
+  unblockProject(projectId, callback) {
+    rclient.del(keys.projectBlock({ project_id: projectId }), (err, reply) => {
+      if (err) {
+        return callback(err)
+      }
+      const wasBlocked = reply === 1
+      callback(null, wasBlocked)
+    })
+  },
+
   _serializeRanges(ranges, callback) {
     let jsonRanges = JSON.stringify(ranges)
     if (jsonRanges && jsonRanges.length > MAX_RANGES_SIZE) {
@@ -699,14 +777,6 @@ const RedisManager = {
     // binary in node < v5
     return crypto.createHash('sha1').update(docLines, 'utf8').digest('hex')
   },
-}
-
-function setHistoryRangesSupportFlag(docId, historyRangesSupport, callback) {
-  if (historyRangesSupport) {
-    rclient.sadd(keys.historyRangesSupport(), docId, callback)
-  } else {
-    rclient.srem(keys.historyRangesSupport(), docId, callback)
-  }
 }
 
 module.exports = RedisManager

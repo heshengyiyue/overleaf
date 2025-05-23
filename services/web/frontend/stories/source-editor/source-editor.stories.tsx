@@ -6,7 +6,7 @@ import { FC } from 'react'
 import { FileTreePathContext } from '@/features/file-tree/contexts/file-tree-path'
 import RangesTracker from '@overleaf/ranges-tracker'
 
-const FileTreePathProvider: FC = ({ children }) => (
+const FileTreePathProvider: FC<React.PropsWithChildren> = ({ children }) => (
   <FileTreePathContext.Provider
     value={{
       dirname: () => null,
@@ -55,13 +55,6 @@ const settings = {
   syntaxValidation: false,
 }
 
-const reviewPanel = {
-  resolvedComments: {},
-  formattedProjectMembers: {},
-  overview: { docsCollapsedState: { 'story-doc': false } },
-  entries: {},
-}
-
 const permissions = {
   write: true,
 }
@@ -101,7 +94,6 @@ export const Latex = (args: any, { globals: { theme } }: any) => {
       overallTheme: theme === 'default-' ? '' : theme,
     },
     permissions,
-    reviewPanel,
   })
 
   useMeta({
@@ -122,7 +114,6 @@ export const Markdown = (args: any, { globals: { theme } }: any) => {
       overallTheme: theme === 'default-' ? '' : theme,
     },
     permissions,
-    reviewPanel,
   })
 
   return <SourceEditor />
@@ -140,12 +131,10 @@ export const Visual = (args: any, { globals: { theme } }: any) => {
       overallTheme: theme === 'default-' ? '' : theme,
     },
     permissions,
-    reviewPanel,
   })
   useMeta({
     'ol-showSymbolPalette': true,
     'ol-mathJaxPath': 'https://unpkg.com/mathjax@3.2.2/es5/tex-svg-full.js',
-    'ol-inactiveTutorials': ['table-generator-promotion'],
     'ol-project_id': '63e21c07946dd8c76505f85a',
   })
 
@@ -163,13 +152,12 @@ export const Bibtex = (args: any, { globals: { theme } }: any) => {
       overallTheme: theme === 'default-' ? '' : theme,
     },
     permissions,
-    reviewPanel,
   })
 
   return <SourceEditor />
 }
 
-const MAX_DOC_LENGTH = 2 * 1024 * 1024 // window.maxDocLength
+const MAX_DOC_LENGTH = 2 * 1024 * 1024 // ol-maxDocLength
 
 const mockDoc = (content: string, changes: Array<Record<string, any>> = []) => {
   const mockShareJSDoc = {
@@ -223,6 +211,7 @@ const mockDoc = (content: string, changes: Array<Record<string, any>> = []) => {
       return null
     },
     ranges: new RangesTracker(changes, []),
+    hasBufferedOps: () => false,
   }
 }
 

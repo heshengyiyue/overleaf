@@ -33,9 +33,10 @@ const SubscriptionSchema = new Schema(
     membersLimit: { type: Number, default: 0 },
     customAccount: Boolean,
     features: {
-      managedUsers: { type: Boolean, default: null },
-      groupSSO: { type: Boolean, default: null },
+      managedUsers: { type: Boolean, default: true },
+      groupSSO: { type: Boolean, default: true },
     },
+    addOns: Schema.Types.Mixed,
     overleaf: {
       id: {
         type: Number,
@@ -55,6 +56,28 @@ const SubscriptionSchema = new Schema(
       trialEndsAt: {
         type: Date,
       },
+    },
+    paymentProvider: {
+      service: {
+        type: String,
+      },
+      subscriptionId: {
+        type: String,
+      },
+      state: {
+        type: String,
+      },
+      trialStartedAt: {
+        type: Date,
+      },
+      trialEndsAt: {
+        type: Date,
+      },
+    },
+    collectionMethod: {
+      type: String,
+      enum: ['automatic', 'manual'],
+      default: 'automatic',
     },
     v1_id: {
       type: Number,

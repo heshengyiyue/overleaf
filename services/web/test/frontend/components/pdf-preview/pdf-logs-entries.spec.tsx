@@ -8,6 +8,9 @@ import {
   EditorManager,
   EditorManagerContext,
 } from '@/features/ide-react/context/editor-manager-context'
+import { EditorView } from '@codemirror/view'
+import { OpenDocuments } from '@/features/ide-react/editor/open-documents'
+import { LogEntry } from '@/features/pdf-preview/util/types'
 
 describe('<PdfLogsEntries/>', function () {
   const fakeFindEntityResult: FindResult = {
@@ -15,7 +18,7 @@ describe('<PdfLogsEntries/>', function () {
     entity: { _id: '123', name: '123 Doc' },
   }
 
-  const FileTreePathProvider: FC = ({ children }) => (
+  const FileTreePathProvider: FC<React.PropsWithChildren> = ({ children }) => (
     <FileTreePathContext.Provider
       value={{
         dirname: cy.stub(),
@@ -31,9 +34,11 @@ describe('<PdfLogsEntries/>', function () {
     </FileTreePathContext.Provider>
   )
 
-  const EditorManagerProvider: FC = ({ children }) => {
+  const EditorManagerProvider: FC<React.PropsWithChildren> = ({ children }) => {
     const value = {
-      openDocId: cy.spy().as('openDocId'),
+      openDocWithId: cy.spy().as('openDocWithId'),
+      // @ts-ignore
+      openDocs: new OpenDocuments(),
     } as unknown as EditorManager
 
     return (
@@ -43,7 +48,7 @@ describe('<PdfLogsEntries/>', function () {
     )
   }
 
-  const logEntries = [
+  const logEntries: LogEntry[] = [
     {
       file: 'main.tex',
       line: 9,
@@ -57,6 +62,10 @@ describe('<PdfLogsEntries/>', function () {
     },
   ]
 
+  const scope = {
+    'editor.view': new EditorView({ doc: '\\documentclass{article}' }),
+  }
+
   beforeEach(function () {
     cy.interceptCompile()
     cy.interceptEvents()
@@ -64,7 +73,7 @@ describe('<PdfLogsEntries/>', function () {
 
   it('displays human readable hint', function () {
     cy.mount(
-      <EditorProviders>
+      <EditorProviders scope={scope}>
         <PdfLogsEntries entries={logEntries} />
       </EditorProviders>
     )
@@ -75,6 +84,7 @@ describe('<PdfLogsEntries/>', function () {
   it('opens doc on click', function () {
     cy.mount(
       <EditorProviders
+        scope={scope}
         providers={{ EditorManagerProvider, FileTreePathProvider }}
       >
         <PdfLogsEntries entries={logEntries} />
@@ -86,23 +96,25 @@ describe('<PdfLogsEntries/>', function () {
     }).click()
 
     cy.get('@findEntityByPath').should('have.been.calledOnceWith', 'main.tex')
-    cy.get('@openDocId').should(
+    cy.get('@openDocWithId').should(
       'have.been.calledOnceWith',
       fakeFindEntityResult.entity._id,
       {
         gotoLine: 9,
         gotoColumn: 8,
+        keepCurrentView: false,
       }
     )
   })
 
   it('opens doc via detached action', function () {
     cy.window().then(win => {
-      win.metaAttributesCache = new Map([['ol-detachRole', 'detacher']])
+      win.metaAttributesCache.set('ol-detachRole', 'detacher')
     })
 
     cy.mount(
       <EditorProviders
+        scope={scope}
         providers={{ EditorManagerProvider, FileTreePathProvider }}
       >
         <PdfLogsEntries entries={logEntries} />
@@ -124,23 +136,25 @@ describe('<PdfLogsEntries/>', function () {
     })
 
     cy.get('@findEntityByPath').should('have.been.calledOnce')
-    cy.get('@openDocId').should(
+    cy.get('@openDocWithId').should(
       'have.been.calledOnceWith',
       fakeFindEntityResult.entity._id,
       {
         gotoLine: 7,
         gotoColumn: 6,
+        keepCurrentView: false,
       }
     )
   })
 
   it('sends open doc clicks via detached action', function () {
     cy.window().then(win => {
-      win.metaAttributesCache = new Map([['ol-detachRole', 'detached']])
+      win.metaAttributesCache.set('ol-detachRole', 'detached')
     })
 
     cy.mount(
       <EditorProviders
+        scope={scope}
         providers={{ EditorManagerProvider, FileTreePathProvider }}
       >
         <PdfLogsEntries entries={logEntries} />
@@ -154,7 +168,7 @@ describe('<PdfLogsEntries/>', function () {
     }).click()
 
     cy.get('@findEntityByPath').should('not.have.been.called')
-    cy.get('@openDocId').should('not.have.been.called')
+    cy.get('@openDocWithId').should('not.have.been.called')
     cy.get('@postDetachMessage').should('have.been.calledWith', {
       role: 'detached',
       event: 'action-sync-to-entry',

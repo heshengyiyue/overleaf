@@ -26,7 +26,8 @@ function withContent<T extends SortBtnOwnProps>(
     let screenReaderText = t('sort_by_x', { x: text })
 
     if (column === sort.by) {
-      iconType = sort.order === 'asc' ? 'caret-up' : 'caret-down'
+      iconType =
+        sort.order === 'asc' ? 'arrow_upward_alt' : 'arrow_downward_alt'
       screenReaderText = t('reverse_x_sort_order', { x: text })
     }
 

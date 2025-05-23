@@ -1,14 +1,18 @@
 import { sortBy } from 'lodash'
-import { Button } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
-import Icon from '../../../../shared/components/icon'
-import MaterialIcon from '../../../../shared/components/material-icon'
+import { DotsThreeVertical, Plus, TagSimple } from '@phosphor-icons/react'
 import {
   UNCATEGORIZED_KEY,
   useProjectListContext,
 } from '../../context/project-list-context'
 import useTag from '../../hooks/use-tag'
 import { getTagColor } from '../../util/tag'
+import {
+  Dropdown,
+  DropdownItem,
+  DropdownMenu,
+  DropdownToggle,
+} from '@/features/ui/components/bootstrap-5/dropdown-menu'
 
 export default function TagsList() {
   const { t } = useTranslation()
@@ -31,18 +35,18 @@ export default function TagsList() {
 
   return (
     <>
-      <li role="separator" className="separator">
-        <h2>{t('organize_projects')}</h2>
+      <li
+        className="dropdown-header"
+        aria-hidden="true"
+        data-testid="organize-projects"
+      >
+        {t('organize_tags')}
       </li>
       <li className="tag">
-        <Button
-          className="tag-name"
-          onClick={openCreateTagModal}
-          bsStyle={null}
-        >
-          <Icon type="plus" />
+        <button type="button" className="tag-name" onClick={openCreateTagModal}>
+          <Plus weight="bold" />
           <span className="name">{t('new_tag')}</span>
-        </Button>
+        </button>
       </li>
       {sortBy(tags, tag => tag.name?.toLowerCase()).map(tag => {
         return (
@@ -50,19 +54,19 @@ export default function TagsList() {
             className={`tag ${selectedTagId === tag._id ? 'active' : ''}`}
             key={tag._id}
           >
-            <Button
+            <button
+              type="button"
               className="tag-name"
               onClick={e =>
                 handleSelectTag(e as unknown as React.MouseEvent, tag._id)
               }
-              bsStyle={null}
             >
               <span
                 style={{
                   color: getTagColor(tag),
                 }}
               >
-                <MaterialIcon type="label" style={{ verticalAlign: 'sub' }} />
+                <TagSimple weight="fill" className="tag-list-icon" />
               </span>
               <span className="name">
                 {tag.name}{' '}
@@ -70,36 +74,33 @@ export default function TagsList() {
                   ({projectsPerTag[tag._id].length})
                 </span>
               </span>
-            </Button>
-            <span className="dropdown tag-menu">
-              <button
-                className="dropdown-toggle"
-                data-toggle="dropdown"
-                dropdown-toggle=""
-                aria-haspopup="true"
-                aria-expanded="false"
+            </button>
+
+            <Dropdown align="end" className="tag-menu">
+              <DropdownToggle
+                aria-label={t('open_action_menu', { name: tag.name })}
+                id={`${tag._id}-dropdown-toggle`}
+                data-testid="tag-dropdown-toggle"
               >
-                <span className="caret" />
-              </button>
-              <ul className="dropdown-menu dropdown-menu-right" role="menu">
-                <li>
-                  <Button
-                    onClick={e => handleEditTag(e, tag._id)}
-                    className="tag-action"
-                  >
-                    {t('edit')}
-                  </Button>
-                </li>
-                <li>
-                  <Button
-                    onClick={e => handleDeleteTag(e, tag._id)}
-                    className="tag-action"
-                  >
-                    {t('delete')}
-                  </Button>
-                </li>
-              </ul>
-            </span>
+                <DotsThreeVertical weight="bold" />
+              </DropdownToggle>
+              <DropdownMenu className="dropdown-menu-sm-width">
+                <DropdownItem
+                  as="li"
+                  className="tag-action"
+                  onClick={e => handleEditTag(e, tag._id)}
+                >
+                  {t('edit')}
+                </DropdownItem>
+                <DropdownItem
+                  as="li"
+                  className="tag-action"
+                  onClick={e => handleDeleteTag(e, tag._id)}
+                >
+                  {t('delete')}
+                </DropdownItem>
+              </DropdownMenu>
+            </Dropdown>
           </li>
         )
       })}
@@ -109,14 +110,16 @@ export default function TagsList() {
             selectedTagId === UNCATEGORIZED_KEY ? 'active' : ''
           }`}
         >
-          <Button
+          <button
+            type="button"
             className="tag-name"
             onClick={() => selectTag(UNCATEGORIZED_KEY)}
-            bsStyle={null}
           >
-            <span className="name">{t('uncategorized')}</span>
-            <span className="subdued"> ({untaggedProjectsCount})</span>
-          </Button>
+            <span className="name fst-italic">
+              {t('uncategorized')}{' '}
+              <span className="subdued">({untaggedProjectsCount})</span>
+            </span>
+          </button>
         </li>
       )}
       <CreateTagModal id="create-tag-modal" />

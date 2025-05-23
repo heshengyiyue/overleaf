@@ -1,4 +1,3 @@
-// @ts-ignore
 import { generateSHA1Hash } from '../../../shared/utils/sha1'
 import {
   createContext,
@@ -11,80 +10,51 @@ import {
 } from 'react'
 import { useIdeReactContext } from '@/features/ide-react/context/ide-react-context'
 import { useConnectionContext } from '@/features/ide-react/context/connection-context'
-import _ from 'lodash'
 import { postJSON } from '@/infrastructure/fetch-json'
 import { ShareJsDoc } from '@/features/ide-react/editor/share-js-doc'
-import useScopeValue from '@/shared/hooks/use-scope-value'
-import { ReactScopeValueStore } from '@/features/ide-react/scope-value-store/react-scope-value-store'
 import { useFileTreeData } from '@/shared/context/file-tree-data-context'
 import { findDocEntityById } from '@/features/ide-react/util/find-doc-entity-by-id'
 import { IdeEvents } from '@/features/ide-react/create-ide-event-emitter'
 import { debugConsole } from '@/utils/debugging'
+import useEventListener from '@/shared/hooks/use-event-listener'
 
-type References = {
-  keys: string[]
-}
+export const ReferencesContext = createContext<
+  | {
+      referenceKeys: Set<string>
+      indexAllReferences: (shouldBroadcast: boolean) => Promise<void>
+    }
+  | undefined
+>(undefined)
 
-type ReferencesContextValue = {
-  indexReferencesIfDocModified: (
-    doc: ShareJsDoc,
-    shouldBroadcast: boolean
-  ) => void
-  indexAllReferences: (shouldBroadcast: boolean) => void
-}
-
-type IndexReferencesResponse = References
-
-const ReferencesContext = createContext<ReferencesContextValue | undefined>(
-  undefined
-)
-
-export function populateReferenceScope(store: ReactScopeValueStore) {
-  store.set('$root._references', { keys: [] })
-}
-
-export const ReferencesProvider: FC = ({ children }) => {
+export const ReferencesProvider: FC<React.PropsWithChildren> = ({
+  children,
+}) => {
   const { fileTreeData } = useFileTreeData()
   const { eventEmitter, projectId } = useIdeReactContext()
   const { socket } = useConnectionContext()
 
-  const [references, setReferences] =
-    useScopeValue<References>('$root._references')
+  const [referenceKeys, setReferenceKeys] = useState(new Set<string>())
 
   const [existingIndexHash, setExistingIndexHash] = useState<
     Record<string, { hash: string; timestamp: number }>
   >({})
 
-  const storeReferencesKeys = useCallback(
-    (newKeys: string[], replaceExistingKeys: boolean) => {
-      const oldKeys = references.keys
-      const keys = replaceExistingKeys ? newKeys : _.union(oldKeys, newKeys)
-      window.dispatchEvent(
-        new CustomEvent('project:references', {
-          detail: keys,
-        })
-      )
-      setReferences({ keys })
-    },
-    [references.keys, setReferences]
-  )
-
   const indexAllReferences = useCallback(
-    (shouldBroadcast: boolean) => {
-      postJSON(`/project/${projectId}/references/indexAll`, {
+    async (shouldBroadcast: boolean) => {
+      return postJSON(`/project/${projectId}/references/indexAll`, {
         body: {
           shouldBroadcast,
         },
       })
-        .then((response: IndexReferencesResponse) => {
-          storeReferencesKeys(response.keys, true)
+        .then((response: { keys: string[] }) => {
+          setReferenceKeys(new Set(response.keys))
         })
         .catch(error => {
           // allow the request to fail
           debugConsole.error(error)
         })
     },
-    [projectId, storeReferencesKeys]
+    [projectId]
   )
 
   const indexReferencesIfDocModified = useCallback(
@@ -92,7 +62,7 @@ export const ReferencesProvider: FC = ({ children }) => {
       // avoid reindexing references if the bib file has not changed since the
       // last time they were indexed
       const docId = doc.doc_id
-      const snapshot = doc._doc.snapshot
+      const snapshot = doc.getSnapshot()
       const now = Date.now()
       const sha1 = generateSHA1Hash(
         'blob ' + snapshot.length + '\x00' + snapshot
@@ -133,25 +103,22 @@ export const ReferencesProvider: FC = ({ children }) => {
     }
   }, [eventEmitter, fileTreeData, indexReferencesIfDocModified])
 
-  useEffect(() => {
-    const handleShouldReindex = () => {
+  useEventListener(
+    'reference:added',
+    useCallback(() => {
       indexAllReferences(true)
-    }
-
-    eventEmitter.on('references:should-reindex', handleShouldReindex)
-
-    return () => {
-      eventEmitter.off('references:should-reindex', handleShouldReindex)
-    }
-  }, [eventEmitter, indexAllReferences])
+    }, [indexAllReferences])
+  )
 
   useEffect(() => {
     const handleProjectJoined = () => {
       // We only need to grab the references when the editor first loads,
       // not on every reconnect
-      socket.on('references:keys:updated', (keys, allDocs) =>
-        storeReferencesKeys(keys, allDocs)
-      )
+      socket.on('references:keys:updated', (keys, allDocs) => {
+        setReferenceKeys(oldKeys =>
+          allDocs ? new Set(keys) : new Set([...oldKeys, ...keys])
+        )
+      })
       indexAllReferences(false)
     }
 
@@ -160,14 +127,14 @@ export const ReferencesProvider: FC = ({ children }) => {
     return () => {
       eventEmitter.off('project:joined', handleProjectJoined)
     }
-  }, [eventEmitter, indexAllReferences, socket, storeReferencesKeys])
+  }, [eventEmitter, indexAllReferences, socket])
 
-  const value = useMemo<ReferencesContextValue>(
+  const value = useMemo(
     () => ({
-      indexReferencesIfDocModified,
+      referenceKeys,
       indexAllReferences,
     }),
-    [indexReferencesIfDocModified, indexAllReferences]
+    [indexAllReferences, referenceKeys]
   )
 
   return (
@@ -177,7 +144,7 @@ export const ReferencesProvider: FC = ({ children }) => {
   )
 }
 
-export function useReferencesContext(): ReferencesContextValue {
+export function useReferencesContext() {
   const context = useContext(ReferencesContext)
 
   if (!context) {

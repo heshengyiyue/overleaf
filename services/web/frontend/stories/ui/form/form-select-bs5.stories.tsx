@@ -1,23 +1,21 @@
-import { Form } from 'react-bootstrap-5'
+import { Form, FormSelectProps } from 'react-bootstrap'
 import type { Meta, StoryObj } from '@storybook/react'
+import FormGroup from '@/features/ui/components/bootstrap-5/form/form-group'
 import FormText from '@/features/ui/components/bootstrap-5/form/form-text'
 
-const meta: Meta<(typeof Form)['Select']> = {
-  title: 'Shared / Components / Bootstrap 5 / Form / Select',
+const meta: Meta<FormSelectProps> = {
+  title: 'Shared / Components / Form / Select',
   component: Form.Select,
-  parameters: {
-    bootstrap5: true,
-  },
 }
 export default meta
 
-type Story = StoryObj<(typeof Form)['Select']>
+type Story = StoryObj<FormSelectProps>
 
 export const Default: Story = {
   render: args => {
     return (
       <>
-        <Form.Group controlId="id-1">
+        <FormGroup controlId="id-1">
           <Form.Label>Label</Form.Label>
           <Form.Select size="lg" {...args}>
             <option>Large select</option>
@@ -26,9 +24,9 @@ export const Default: Story = {
             <option value="3">Three</option>
           </Form.Select>
           <FormText>Helper</FormText>
-        </Form.Group>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-2">
+        <FormGroup controlId="id-2">
           <Form.Label>Label</Form.Label>
           <Form.Select {...args}>
             <option>Regular select</option>
@@ -37,9 +35,9 @@ export const Default: Story = {
             <option value="3">Three</option>
           </Form.Select>
           <FormText>Helper</FormText>
-        </Form.Group>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-3">
+        <FormGroup controlId="id-3">
           <Form.Label>Label</Form.Label>
           <Form.Select size="sm" {...args}>
             <option>Small select</option>
@@ -48,7 +46,7 @@ export const Default: Story = {
             <option value="3">Three</option>
           </Form.Select>
           <FormText>Helper</FormText>
-        </Form.Group>
+        </FormGroup>
       </>
     )
   },
@@ -61,7 +59,7 @@ export const Info: Story = {
   render: args => {
     return (
       <>
-        <Form.Group controlId="id-1">
+        <FormGroup controlId="id-1">
           <Form.Label>Label</Form.Label>
           <Form.Select size="lg" {...args}>
             <option>Large select</option>
@@ -69,10 +67,10 @@ export const Info: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isInfo>Info</FormText>
-        </Form.Group>
+          <FormText type="info">Info</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-2">
+        <FormGroup controlId="id-2">
           <Form.Label>Label</Form.Label>
           <Form.Select {...args}>
             <option>Regular select</option>
@@ -80,10 +78,10 @@ export const Info: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isInfo>Info</FormText>
-        </Form.Group>
+          <FormText type="info">Info</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-3">
+        <FormGroup controlId="id-3">
           <Form.Label>Label</Form.Label>
           <Form.Select size="sm" {...args}>
             <option>Small select</option>
@@ -91,8 +89,8 @@ export const Info: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isInfo>Info</FormText>
-        </Form.Group>
+          <FormText type="info">Info</FormText>
+        </FormGroup>
       </>
     )
   },
@@ -102,7 +100,7 @@ export const Error: Story = {
   render: args => {
     return (
       <>
-        <Form.Group controlId="id-1">
+        <FormGroup controlId="id-1">
           <Form.Label>Label</Form.Label>
           <Form.Select size="lg" isInvalid {...args}>
             <option>Large select</option>
@@ -110,10 +108,10 @@ export const Error: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isError>Error</FormText>
-        </Form.Group>
+          <FormText type="error">Error</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-2">
+        <FormGroup controlId="id-2">
           <Form.Label>Label</Form.Label>
           <Form.Select isInvalid {...args}>
             <option>Regular select</option>
@@ -121,10 +119,10 @@ export const Error: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isError>Error</FormText>
-        </Form.Group>
+          <FormText type="error">Error</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-3">
+        <FormGroup controlId="id-3">
           <Form.Label>Label</Form.Label>
           <Form.Select size="sm" isInvalid {...args}>
             <option>Small select</option>
@@ -132,8 +130,8 @@ export const Error: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isError>Error</FormText>
-        </Form.Group>
+          <FormText type="error">Error</FormText>
+        </FormGroup>
       </>
     )
   },
@@ -143,7 +141,7 @@ export const Warning: Story = {
   render: args => {
     return (
       <>
-        <Form.Group controlId="id-1">
+        <FormGroup controlId="id-1">
           <Form.Label>Label</Form.Label>
           <Form.Select size="lg" {...args}>
             <option>Large select</option>
@@ -151,10 +149,10 @@ export const Warning: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isWarning>Warning</FormText>
-        </Form.Group>
+          <FormText type="warning">Warning</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-2">
+        <FormGroup controlId="id-2">
           <Form.Label>Label</Form.Label>
           <Form.Select {...args}>
             <option>Regular select</option>
@@ -162,10 +160,10 @@ export const Warning: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isWarning>Warning</FormText>
-        </Form.Group>
+          <FormText type="warning">Warning</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-3">
+        <FormGroup controlId="id-3">
           <Form.Label>Label</Form.Label>
           <Form.Select size="sm" {...args}>
             <option>Small select</option>
@@ -173,8 +171,8 @@ export const Warning: Story = {
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isWarning>Warning</FormText>
-        </Form.Group>
+          <FormText type="warning">Warning</FormText>
+        </FormGroup>
       </>
     )
   },
@@ -184,38 +182,38 @@ export const Success: Story = {
   render: args => {
     return (
       <>
-        <Form.Group controlId="id-1">
+        <FormGroup controlId="id-1">
           <Form.Label>Label</Form.Label>
-          <Form.Select size="lg" isSuccess {...args}>
+          <Form.Select size="lg" {...args}>
             <option>Large select</option>
             <option value="1">One</option>
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isSuccess>Success</FormText>
-        </Form.Group>
+          <FormText type="success">Success</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-2">
+        <FormGroup controlId="id-2">
           <Form.Label>Label</Form.Label>
-          <Form.Select isSuccess {...args}>
+          <Form.Select {...args}>
             <option>Regular select</option>
             <option value="1">One</option>
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isSuccess>Success</FormText>
-        </Form.Group>
+          <FormText type="success">Success</FormText>
+        </FormGroup>
         <hr />
-        <Form.Group controlId="id-3">
+        <FormGroup controlId="id-3">
           <Form.Label>Label</Form.Label>
-          <Form.Select size="sm" isSuccess {...args}>
+          <Form.Select size="sm" {...args}>
             <option>Small select</option>
             <option value="1">One</option>
             <option value="2">Two</option>
             <option value="3">Three</option>
           </Form.Select>
-          <FormText isSuccess>Success</FormText>
-        </Form.Group>
+          <FormText type="success">Success</FormText>
+        </FormGroup>
       </>
     )
   },

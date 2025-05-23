@@ -12,6 +12,10 @@ switch (process.argv.pop()) {
       console.log('pushd', `services/${service.name}`)
       switch (service.name) {
         case 'web':
+          // precompile pug in background
+          console.log('npm run precompile-pug &')
+          console.log('pug_precompile=$!')
+
           // Avoid downloading of cypress
           console.log('export CYPRESS_INSTALL_BINARY=0')
 
@@ -19,10 +23,11 @@ switch (process.argv.pop()) {
           console.log('npm install --include=dev')
           // run webpack
           console.log('npm run webpack:production')
-          // drop webpack/babel cache
-          console.log('rm -rf node_modules/.cache')
           // uninstall webpack and frontend dependencies
           console.log('npm install --omit=dev')
+
+          // Wait for pug precompile to finish
+          console.log('wait "$pug_precompile"')
           break
         default:
           console.log(`echo ${service.name} does not require a compilation`)
@@ -35,8 +40,3 @@ switch (process.argv.pop()) {
     console.log('exit 101')
     process.exit(101)
 }
-
-console.log('set +x')
-console.log(
-  'rm -rf /root/.cache /root/.npm $(find /tmp/ -mindepth 1 -maxdepth 1)'
-)

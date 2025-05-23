@@ -1,14 +1,12 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Alert,
-  Button,
-  ControlLabel,
-  FormControl,
-  FormGroup,
-  Modal,
-} from 'react-bootstrap'
+  FormEvent,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 import { useTranslation } from 'react-i18next'
-import AccessibleModal from '../../../../shared/components/accessible-modal'
 import * as eventTracking from '../../../../infrastructure/event-tracking'
 import { Project } from '../../../../../../types/project/dashboard/api'
 import { renameProject } from '../../util/api'
@@ -18,7 +16,17 @@ import { getUserFacingMessage } from '../../../../infrastructure/fetch-json'
 import { debugConsole } from '@/utils/debugging'
 import { isSmallDevice } from '../../../../infrastructure/event-tracking'
 import Notification from '@/shared/components/notification'
-import getMeta from '@/utils/meta'
+import OLModal, {
+  OLModalBody,
+  OLModalFooter,
+  OLModalHeader,
+  OLModalTitle,
+} from '@/features/ui/components/ol/ol-modal'
+import OLButton from '@/features/ui/components/ol/ol-button'
+import OLForm from '@/features/ui/components/ol/ol-form'
+import OLFormGroup from '@/features/ui/components/ol/ol-form-group'
+import OLFormLabel from '@/features/ui/components/ol/ol-form-label'
+import OLFormControl from '@/features/ui/components/ol/ol-form-control'
 
 type RenameProjectModalProps = {
   handleCloseModal: () => void
@@ -36,10 +44,6 @@ function RenameProjectModal({
   const { error, isError, isLoading, runAsync } = useAsync()
   const { toggleSelectedProject, updateProjectViewData } =
     useProjectListContext()
-  const newNotificationStyle = getMeta(
-    'ol-newNotificationStyle',
-    false
-  ) as boolean
 
   useEffect(() => {
     if (showModal) {
@@ -56,8 +60,12 @@ function RenameProjectModal({
     [newProjectName, project]
   )
 
+  useEffect(() => {
+    setNewProjectName(project.name)
+  }, [project.name])
+
   const handleSubmit = useCallback(
-    event => {
+    (event: FormEvent) => {
       event.preventDefault()
 
       if (!isValid) return
@@ -84,72 +92,57 @@ function RenameProjectModal({
     ]
   )
 
-  const handleOnChange = (
-    event: React.ChangeEvent<HTMLFormElement & FormControl>
-  ) => {
+  const handleOnChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setNewProjectName(event.target.value)
   }
 
   return (
-    <AccessibleModal
+    <OLModal
       animation
       show={showModal}
       onHide={handleCloseModal}
       id="rename-project-modal"
       backdrop="static"
     >
-      <Modal.Header closeButton>
-        <Modal.Title>{t('rename_project')}</Modal.Title>
-      </Modal.Header>
-      <Modal.Body>
-        {isError &&
-          (newNotificationStyle ? (
-            <div className="notification-list">
-              <Notification
-                type="error"
-                content={getUserFacingMessage(error) as string}
-              />
-            </div>
-          ) : (
-            <Alert bsStyle="danger" className="text-center" aria-live="polite">
-              {getUserFacingMessage(error)}
-            </Alert>
-          ))}
-        <form id="rename-project-form" onSubmit={handleSubmit}>
-          <FormGroup>
-            <ControlLabel htmlFor="rename-project-form-name">
-              {t('new_name')}
-            </ControlLabel>
-
-            <FormControl
-              id="rename-project-form-name"
+      <OLModalHeader closeButton>
+        <OLModalTitle>{t('rename_project')}</OLModalTitle>
+      </OLModalHeader>
+      <OLModalBody>
+        {isError && (
+          <div className="notification-list">
+            <Notification
+              type="error"
+              content={getUserFacingMessage(error) as string}
+            />
+          </div>
+        )}
+        <OLForm id="rename-project-form" onSubmit={handleSubmit}>
+          <OLFormGroup controlId="rename-project-form-name">
+            <OLFormLabel>{t('new_name')}</OLFormLabel>
+            <OLFormControl
               type="text"
               placeholder={t('project_name')}
               required
               value={newProjectName}
               onChange={handleOnChange}
             />
-          </FormGroup>
-        </form>
-      </Modal.Body>
-      <Modal.Footer>
-        <Button
-          bsStyle={null}
-          className="btn-secondary"
-          onClick={handleCloseModal}
-        >
+          </OLFormGroup>
+        </OLForm>
+      </OLModalBody>
+      <OLModalFooter>
+        <OLButton variant="secondary" onClick={handleCloseModal}>
           {t('cancel')}
-        </Button>
-        <Button
-          form="rename-project-form"
-          bsStyle="primary"
-          disabled={isLoading || !isValid}
+        </OLButton>
+        <OLButton
+          variant="primary"
           type="submit"
+          form="rename-project-form"
+          disabled={isLoading || !isValid}
         >
           {t('rename')}
-        </Button>
-      </Modal.Footer>
-    </AccessibleModal>
+        </OLButton>
+      </OLModalFooter>
+    </OLModal>
   )
 }
 

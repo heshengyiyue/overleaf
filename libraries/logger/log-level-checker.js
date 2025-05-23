@@ -1,5 +1,5 @@
 const { fetchString } = require('@overleaf/fetch-utils')
-const fs = require('fs')
+const fs = require('node:fs')
 
 class LogLevelChecker {
   constructor(logger, defaultLevel) {
@@ -12,6 +12,7 @@ class LogLevelChecker {
     this.checkLogLevel()
     // re-check log level every minute
     this.checkInterval = setInterval(this.checkLogLevel.bind(this), 1000 * 60)
+    this.checkInterval.unref()
   }
 
   stop() {

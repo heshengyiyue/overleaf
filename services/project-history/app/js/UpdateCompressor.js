@@ -2,12 +2,10 @@
 
 import OError from '@overleaf/o-error'
 import DMP from 'diff-match-patch'
+import { EditOperationBuilder } from 'overleaf-editor-core'
 
 /**
- * @typedef {import('./types').DeleteOp} DeleteOp
- * @typedef {import('./types').InsertOp} InsertOp
- * @typedef {import('./types').Op} Op
- * @typedef {import('./types').Update} Update
+ * @import { DeleteOp, InsertOp, Op, Update } from './types'
  */
 
 const MAX_TIME_BETWEEN_UPDATES = 60 * 1000 // one minute
@@ -32,10 +30,15 @@ const cloneWithOp = function (update, op) {
   return update
 }
 const mergeUpdatesWithOp = function (firstUpdate, secondUpdate, op) {
-  // We want to take doc_length and ts from the firstUpdate, v from the second
+  // We want to take doc_length and ts from the firstUpdate, v and doc_hash from the second
   const update = cloneWithOp(firstUpdate, op)
   if (secondUpdate.v != null) {
     update.v = secondUpdate.v
+  }
+  if (secondUpdate.meta.doc_hash != null) {
+    update.meta.doc_hash = secondUpdate.meta.doc_hash
+  } else {
+    delete update.meta.doc_hash
   }
   return update
 }
@@ -115,8 +118,11 @@ export function convertToSingleOpUpdates(updates) {
     if (docLength === -1) {
       docLength = 0
     }
+    const docHash = update.meta.doc_hash
     for (const op of ops) {
       const splitUpdate = cloneWithOp(update, op)
+      // Only the last update will keep the doc_hash property
+      delete splitUpdate.meta.doc_hash
       if (docLength != null) {
         splitUpdate.meta.doc_length = docLength
         docLength = adjustLengthByOp(docLength, op, {
@@ -125,6 +131,9 @@ export function convertToSingleOpUpdates(updates) {
         delete splitUpdate.meta.history_doc_length
       }
       splitUpdates.push(splitUpdate)
+    }
+    if (docHash != null && splitUpdates.length > 0) {
+      splitUpdates[splitUpdates.length - 1].meta.doc_hash = docHash
     }
   }
   return splitUpdates
@@ -156,6 +165,11 @@ export function concatUpdatesWithSameVersion(updates) {
         lastUpdate.pathname === update.pathname
       ) {
         lastUpdate.op = lastUpdate.op.concat(update.op)
+        if (update.meta.doc_hash == null) {
+          delete lastUpdate.meta.doc_hash
+        } else {
+          lastUpdate.meta.doc_hash = update.meta.doc_hash
+        }
       } else {
         concattedUpdates.push(update)
       }
@@ -217,6 +231,13 @@ function _concatTwoUpdates(firstUpdate, secondUpdate) {
     return [firstUpdate, secondUpdate]
   }
 
+  const firstUpdateIsHistoryOT = EditOperationBuilder.isValid(firstUpdate.op)
+  const secondUpdateIsHistoryOT = EditOperationBuilder.isValid(secondUpdate.op)
+  if (firstUpdateIsHistoryOT !== secondUpdateIsHistoryOT) {
+    // cannot merge mix of sharejs-text-op and history-ot, should not happen.
+    return [firstUpdate, secondUpdate]
+  }
+
   if (
     firstUpdate.doc !== secondUpdate.doc ||
     firstUpdate.pathname !== secondUpdate.pathname
@@ -261,6 +282,15 @@ function _concatTwoUpdates(firstUpdate, secondUpdate) {
     // treated as a tracked insert rejection by the history, so these updates
     // need to be well separated.
     return [firstUpdate, secondUpdate]
+  }
+
+  if (firstUpdateIsHistoryOT && secondUpdateIsHistoryOT) {
+    const op1 = EditOperationBuilder.fromJSON(firstUpdate.op)
+    const op2 = EditOperationBuilder.fromJSON(secondUpdate.op)
+    if (!op1.canBeComposedWith(op2)) return [firstUpdate, secondUpdate]
+    return [
+      mergeUpdatesWithOp(firstUpdate, secondUpdate, op1.compose(op2).toJSON()),
+    ]
   }
 
   if (
@@ -384,9 +414,16 @@ function _concatTwoUpdates(firstUpdate, secondUpdate) {
           // Make sure that commentIds metadata is propagated to inserts
           op.commentIds = secondOp.commentIds
         }
-        return mergeUpdatesWithOp(firstUpdate, secondUpdate, op)
+        const update = mergeUpdatesWithOp(firstUpdate, secondUpdate, op)
+        // Set the doc hash only on the last update
+        delete update.meta.doc_hash
+        return update
       }
     )
+    const docHash = secondUpdate.meta.doc_hash
+    if (docHash != null && diffUpdates.length > 0) {
+      diffUpdates[diffUpdates.length - 1].meta.doc_hash = docHash
+    }
 
     // Doing a diff like this loses track of the doc lengths for each
     // update, so recalculate them
@@ -420,8 +457,7 @@ export function diffAsShareJsOps(before, after) {
   const ops = []
   let position = 0
   for (const diff of diffs) {
-    const type = diff[0]
-    const content = diff[1]
+    const [type, content] = diff
     if (type === ADDED) {
       ops.push({
         i: content,

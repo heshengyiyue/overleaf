@@ -4,6 +4,7 @@ import fetchMock from 'fetch-mock'
 import { renderWithProjectListContext } from '../../helpers/render-with-context'
 import AddAffiliation from '../../../../../../frontend/js/features/project-list/components/add-affiliation'
 import { Affiliation } from '../../../../../../types/affiliation'
+import getMeta from '@/utils/meta'
 
 describe('Add affiliation widget', function () {
   const validateNonExistence = () => {
@@ -13,25 +14,23 @@ describe('Add affiliation widget', function () {
   }
 
   beforeEach(function () {
-    window.metaAttributesCache = new Map()
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   afterEach(function () {
-    window.metaAttributesCache = new Map()
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   it('renders the component', async function () {
-    window.metaAttributesCache.set('ol-ExposedSettings', { isOverleaf: true })
+    Object.assign(getMeta('ol-ExposedSettings'), { isOverleaf: true })
     window.metaAttributesCache.set('ol-userAffiliations', [])
 
     renderWithProjectListContext(<AddAffiliation />)
 
-    await fetchMock.flush(true)
-    await waitFor(() => expect(fetchMock.called('/api/project')))
+    await fetchMock.callHistory.flush(true)
+    await waitFor(() => expect(fetchMock.callHistory.called('/api/project')))
 
-    screen.getByText(/are you affiliated with an institution/i)
+    await screen.findByText(/are you affiliated with an institution/i)
     const addAffiliationLink = screen.getByRole('link', {
       name: /add affiliation/i,
     })
@@ -39,39 +38,39 @@ describe('Add affiliation widget', function () {
   })
 
   it('does not render when `isOverleaf` is `false`', async function () {
-    window.metaAttributesCache.set('ol-ExposedSettings', { isOverleaf: false })
+    Object.assign(getMeta('ol-ExposedSettings'), { isOverleaf: false })
     window.metaAttributesCache.set('ol-userAffiliations', [])
 
     renderWithProjectListContext(<AddAffiliation />)
 
-    await fetchMock.flush(true)
-    await waitFor(() => expect(fetchMock.called('/api/project')))
+    await fetchMock.callHistory.flush(true)
+    await waitFor(() => expect(fetchMock.callHistory.called('/api/project')))
 
     validateNonExistence()
   })
 
   it('does not render when there no projects', async function () {
-    window.metaAttributesCache.set('ol-ExposedSettings', { isOverleaf: true })
+    Object.assign(getMeta('ol-ExposedSettings'), { isOverleaf: true })
     window.metaAttributesCache.set('ol-userAffiliations', [])
 
     renderWithProjectListContext(<AddAffiliation />, {
       projects: [],
     })
 
-    await fetchMock.flush(true)
-    await waitFor(() => expect(fetchMock.called('/api/project')))
+    await fetchMock.callHistory.flush(true)
+    await waitFor(() => expect(fetchMock.callHistory.called('/api/project')))
 
     validateNonExistence()
   })
 
   it('does not render when there are affiliations', async function () {
-    window.metaAttributesCache.set('ol-ExposedSettings', { isOverleaf: true })
+    Object.assign(getMeta('ol-ExposedSettings'), { isOverleaf: true })
     window.metaAttributesCache.set('ol-userAffiliations', [{} as Affiliation])
 
     renderWithProjectListContext(<AddAffiliation />)
 
-    await fetchMock.flush(true)
-    await waitFor(() => expect(fetchMock.called('/api/project')))
+    await fetchMock.callHistory.flush(true)
+    await waitFor(() => expect(fetchMock.callHistory.called('/api/project')))
 
     validateNonExistence()
   })

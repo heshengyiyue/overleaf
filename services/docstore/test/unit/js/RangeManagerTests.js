@@ -12,11 +12,11 @@
 const SandboxedModule = require('sandboxed-module')
 const sinon = require('sinon')
 const { assert, expect } = require('chai')
-const modulePath = require('path').join(
+const modulePath = require('node:path').join(
   __dirname,
   '../../../app/js/RangeManager'
 )
-const { ObjectId } = require('mongodb')
+const { ObjectId } = require('mongodb-legacy')
 
 describe('RangeManager', function () {
   beforeEach(function () {

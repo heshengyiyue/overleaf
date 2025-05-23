@@ -1,5 +1,4 @@
 import { memo } from 'react'
-import { useTranslation } from 'react-i18next'
 import InlineTags from './cells/inline-tags'
 import OwnerCell from './cells/owner-cell'
 import LastUpdatedCell from './cells/last-updated-cell'
@@ -12,42 +11,38 @@ import { ProjectListOwnerName } from '@/features/project-list/components/table/p
 
 type ProjectListTableRowProps = {
   project: Project
+  selected: boolean
 }
-function ProjectListTableRow({ project }: ProjectListTableRowProps) {
-  const { t } = useTranslation()
-
+function ProjectListTableRow({ project, selected }: ProjectListTableRowProps) {
   const ownerName = getOwnerName(project)
 
   return (
-    <tr>
-      <td className="dash-cell-checkbox hidden-xs">
-        <ProjectCheckbox projectId={project.id} />
-        <label htmlFor={`select-project-${project.id}`} className="sr-only">
-          {t('select_project', { project: project.name })}
-        </label>
+    <tr className={selected ? 'table-active' : undefined}>
+      <td className="dash-cell-checkbox d-none d-md-table-cell">
+        <ProjectCheckbox projectId={project.id} projectName={project.name} />
       </td>
       <td className="dash-cell-name">
         <a href={`/project/${project.id}`}>{project.name}</a>{' '}
-        <InlineTags className="hidden-xs" projectId={project.id} />
+        <InlineTags className="d-none d-md-inline" projectId={project.id} />
       </td>
-      <td className="dash-cell-date-owner visible-xs pb-0">
+      <td className="dash-cell-date-owner pb-0 d-md-none">
         <LastUpdatedCell project={project} />
         {ownerName ? <ProjectListOwnerName ownerName={ownerName} /> : null}
       </td>
-      <td className="dash-cell-owner hidden-xs">
+      <td className="dash-cell-owner d-none d-md-table-cell">
         <OwnerCell project={project} />
       </td>
-      <td className="dash-cell-date hidden-xs">
+      <td className="dash-cell-date d-none d-md-table-cell">
         <LastUpdatedCell project={project} />
       </td>
-      <td className="dash-cell-tag visible-xs pt-0">
+      <td className="dash-cell-tag pt-0 d-md-none">
         <InlineTags projectId={project.id} />
       </td>
       <td className="dash-cell-actions">
-        <div className="hidden-xs">
+        <div className="d-none d-md-block">
           <ActionsCell project={project} />
         </div>
-        <div className="visible-xs">
+        <div className="d-md-none">
           <ActionsDropdown project={project} />
         </div>
       </td>

@@ -16,21 +16,16 @@ invalidateBabelCacheIfNeeded()
 
 // Generate a hash of entry points, including modules
 const entryPoints = {
-  tracing: './frontend/js/tracing.js',
   'bootstrap-3': './frontend/js/bootstrap-3.ts',
   'bootstrap-5': './frontend/js/bootstrap-5.ts',
-  devToolbar: './frontend/js/dev-toolbar.js',
-  'ide-detached': './frontend/js/ide-detached.js',
-  marketing: './frontend/js/marketing.js',
+  devToolbar: './frontend/js/dev-toolbar.ts',
+  'ide-detached': './frontend/js/ide-detached.ts',
+  marketing: './frontend/js/marketing.ts',
   'main-style': './frontend/stylesheets/main-style.less',
   'main-ieee-style': './frontend/stylesheets/main-ieee-style.less',
   'main-light-style': './frontend/stylesheets/main-light-style.less',
   'main-style-bootstrap-5':
     './frontend/stylesheets/bootstrap-5/main-style.scss',
-  'main-ieee-style-bootstrap-5':
-    './frontend/stylesheets/bootstrap-5/main-ieee-style.scss',
-  'main-light-style-bootstrap-5':
-    './frontend/stylesheets/bootstrap-5/main-light-style.scss',
 }
 
 // Add entrypoints for each "page"
@@ -70,8 +65,8 @@ function getModuleDirectory(moduleName) {
 }
 
 const mathjaxDir = getModuleDirectory('mathjax')
-
-const pdfjsVersions = ['pdfjs-dist213', 'pdfjs-dist401']
+const pdfjsDir = getModuleDirectory('pdfjs-dist')
+const dictionariesDir = getModuleDirectory('@overleaf/dictionaries')
 
 const vendorDir = path.join(__dirname, 'frontend/js/vendor')
 
@@ -79,6 +74,14 @@ const MATHJAX_VERSION = require('mathjax/package.json').version
 if (MATHJAX_VERSION !== PackageVersions.version.mathjax) {
   throw new Error(
     '"mathjax" version de-synced, update services/web/app/src/infrastructure/PackageVersions.js'
+  )
+}
+
+const DICTIONARIES_VERSION =
+  require('@overleaf/dictionaries/package.json').version
+if (DICTIONARIES_VERSION !== PackageVersions.version.dictionaries) {
+  throw new Error(
+    '"@overleaf/dictionaries" version de-synced, update services/web/app/src/infrastructure/PackageVersions.js'
   )
 }
 
@@ -94,6 +97,7 @@ module.exports = {
     path: path.join(__dirname, 'public'),
 
     publicPath: '/',
+    workerPublicPath: '/',
 
     // By default write into js directory
     filename: 'js/[name]-[contenthash].js',
@@ -110,6 +114,10 @@ module.exports = {
     splitChunks: {
       chunks: 'all', // allow non-async chunks to be analysed for shared modules
     },
+    // https://webpack.js.org/configuration/optimization/#optimizationruntimechunk
+    runtimeChunk: {
+      name: 'runtime',
+    },
   },
 
   // Define how file types are handled by webpack
@@ -121,7 +129,10 @@ module.exports = {
         test: /\.([jt]sx?|[cm]js)$/,
         // Only compile application files and specific dependencies
         // (other npm and vendored dependencies must be in ES5 already)
-        exclude: [/node_modules\/(?!(react-dnd|chart\.js|@uppy)\/)/, vendorDir],
+        exclude: [
+          /node_modules\/(?!(react-dnd|chart\.js|@uppy|pdfjs-dist|react-resizable-panels)\/)/,
+          vendorDir,
+        ],
         use: [
           {
             loader: 'babel-loader',
@@ -131,12 +142,27 @@ module.exports = {
               cacheDirectory: true,
               configFile: path.join(__dirname, './babel.config.json'),
               plugins: [
-                process.env.REACT_REFRESH && 'react-refresh/babel',
+                process.env.REACT_REFRESH_ENABLED === 'true' &&
+                  'react-refresh/babel',
               ].filter(Boolean),
             },
           },
         ],
         type: 'javascript/auto',
+      },
+      {
+        test: /\.wasm$/,
+        type: 'asset/resource',
+        generator: {
+          filename: 'js/[name]-[contenthash][ext]',
+        },
+      },
+      {
+        test: /\.txt$/,
+        type: 'asset/source',
+        generator: {
+          filename: 'js/[name]-[contenthash][ext]',
+        },
       },
       {
         // Pass Less files through less-loader/css-loader/mini-css-extract-
@@ -166,7 +192,7 @@ module.exports = {
               // bring up more workers after they timed out
               poolRespawn: true,
               // limit concurrency (one per entrypoint and let the small includes queue up)
-              workers: 6,
+              workers: process.env.NODE_ENV === 'test' ? 1 : 6,
             },
           },
           // Compiles the Less syntax to CSS
@@ -227,8 +253,8 @@ module.exports = {
         },
       },
       {
-        // Load images (static files)
-        test: /\.(svg|gif|png|jpg|pdf)$/,
+        // Load images and videos (static files)
+        test: /\.(svg|gif|png|jpg|pdf|mp4)$/,
         type: 'asset/resource',
         generator: {
           filename: 'images/[name]-[contenthash][ext]',
@@ -255,18 +281,6 @@ module.exports = {
           },
         ],
       },
-      {
-        // Expose jQuery and $ global variables
-        test: require.resolve('jquery'),
-        use: [
-          {
-            loader: 'expose-loader',
-            options: {
-              exposes: ['$', 'jQuery'],
-            },
-          },
-        ],
-      },
     ],
   },
   resolve: {
@@ -282,6 +296,10 @@ module.exports = {
       'react/jsx-runtime': 'react/jsx-runtime.js',
       'react/jsx-dev-runtime': 'react/jsx-dev-runtime.js',
     },
+  },
+
+  experiments: {
+    asyncWebAssembly: true,
   },
 
   plugins: [
@@ -309,9 +327,15 @@ module.exports = {
       contextRegExp: /moment$/,
     }),
 
-    // Copy the required files for loading MathJax from MathJax NPM package
+    // Set window.$ and window.jQuery
+    new webpack.ProvidePlugin({
+      $: 'jquery',
+      jQuery: 'jquery',
+    }),
+
     new CopyPlugin({
       patterns: [
+        // Copy the required files for loading MathJax from MathJax NPM package
         // https://www.npmjs.com/package/mathjax#user-content-hosting-your-own-copy-of-the-mathjax-components
         {
           from: 'es5/tex-svg-full.js',
@@ -349,26 +373,39 @@ module.exports = {
           toType: 'dir',
           context: mathjaxDir,
         },
-        ...pdfjsVersions.flatMap(version => {
-          const dir = getModuleDirectory(version)
-
-          // Copy CMap files (used to provide support for non-Latin characters)
-          // and static images from pdfjs-dist package to build output.
-
-          return [
-            { from: `cmaps`, to: `js/${version}/cmaps`, context: dir },
-            {
-              from: `standard_fonts`,
-              to: `fonts/${version}`,
-              context: dir,
-            },
-            {
-              from: `legacy/web/images`,
-              to: `images/${version}`,
-              context: dir,
-            },
-          ]
-        }),
+        {
+          from: '*',
+          to: `js/dictionaries/${PackageVersions.version.dictionaries}`,
+          toType: 'dir',
+          context: `${dictionariesDir}/dictionaries`,
+        },
+        // Copy CMap files (used to provide support for non-Latin characters),
+        // wasm, ICC profiles, fonts and images from pdfjs-dist package to build output.
+        {
+          from: 'cmaps',
+          to: 'js/pdfjs-dist/cmaps',
+          context: pdfjsDir,
+        },
+        {
+          from: 'iccs',
+          to: 'js/pdfjs-dist/iccs',
+          context: pdfjsDir,
+        },
+        {
+          from: 'wasm',
+          to: 'js/pdfjs-dist/wasm',
+          context: pdfjsDir,
+        },
+        {
+          from: 'standard_fonts',
+          to: 'fonts/pdfjs-dist',
+          context: pdfjsDir,
+        },
+        {
+          from: 'legacy/web/images',
+          to: 'images/pdfjs-dist',
+          context: pdfjsDir,
+        },
       ],
     }),
   ],

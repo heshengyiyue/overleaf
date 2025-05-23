@@ -8,20 +8,19 @@ import Actions from './actions'
 import { institutionAlreadyLinked } from '../../utils/selectors'
 import { useUserEmailsContext } from '../../context/user-email-context'
 import getMeta from '../../../../utils/meta'
-import { ExposedSettings } from '../../../../../../types/exposed-settings'
 import { ssoAvailableForInstitution } from '../../utils/sso'
 import ReconfirmationInfo from './reconfirmation-info'
 import { useLocation } from '../../../../shared/hooks/use-location'
 import OLRow from '@/features/ui/components/ol/ol-row'
 import OLCol from '@/features/ui/components/ol/ol-col'
-import { bsVersion } from '@/features/utils/bootstrap-5'
 import OLButton from '@/features/ui/components/ol/ol-button'
 
 type EmailsRowProps = {
   userEmailData: UserEmailData
+  primary?: UserEmailData
 }
 
-function EmailsRow({ userEmailData }: EmailsRowProps) {
+function EmailsRow({ userEmailData, primary }: EmailsRowProps) {
   const hasSSOAffiliation = Boolean(
     userEmailData.affiliation &&
       ssoAvailableForInstitution(userEmailData.affiliation.institution)
@@ -29,7 +28,7 @@ function EmailsRow({ userEmailData }: EmailsRowProps) {
 
   return (
     <>
-      <OLRow>
+      <OLRow data-testid="email-row">
         <OLCol lg={4}>
           <EmailCell>
             <Email userEmailData={userEmailData} />
@@ -43,13 +42,8 @@ function EmailsRow({ userEmailData }: EmailsRowProps) {
           )}
         </OLCol>
         <OLCol lg={3}>
-          <EmailCell
-            className={bsVersion({
-              bs5: 'text-lg-end',
-              bs3: 'text-md-right',
-            })}
-          >
-            <Actions userEmailData={userEmailData} />
+          <EmailCell className="text-lg-end">
+            <Actions userEmailData={userEmailData} primary={primary} />
           </EmailCell>
         </OLCol>
       </OLRow>
@@ -67,7 +61,7 @@ type SSOAffiliationInfoProps = {
 }
 
 function SSOAffiliationInfo({ userEmailData }: SSOAffiliationInfoProps) {
-  const { samlInitPath } = getMeta('ol-ExposedSettings') as ExposedSettings
+  const { samlInitPath } = getMeta('ol-ExposedSettings')
   const { t } = useTranslation()
   const { state } = useUserEmailsContext()
   const location = useLocation()
@@ -152,20 +146,14 @@ function SSOAffiliationInfo({ userEmailData }: SSOAffiliationInfoProps) {
               </p>
             </EmailCell>
           </OLCol>
-          <OLCol
-            lg={3}
-            className={bsVersion({
-              bs5: 'text-lg-end',
-              bs3: 'text-md-right',
-            })}
-          >
+          <OLCol lg={3} className="text-lg-end">
             <EmailCell>
               <OLButton
                 variant="primary"
                 className="btn-link-accounts"
                 disabled={linkAccountsButtonDisabled}
                 onClick={handleLinkAccountsButtonClick}
-                size="small"
+                size="sm"
               >
                 {t('link_accounts')}
               </OLButton>

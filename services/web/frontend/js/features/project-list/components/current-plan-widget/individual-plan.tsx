@@ -1,6 +1,7 @@
 import { useTranslation, Trans } from 'react-i18next'
 import { IndividualPlanSubscription } from '../../../../../../types/project/dashboard/subscription'
-import Tooltip from '../../../../shared/components/tooltip'
+import OLTooltip from '@/features/ui/components/ol/ol-tooltip'
+import MaterialIcon from '@/shared/components/material-icon'
 
 type IndividualPlanProps = Pick<
   IndividualPlanSubscription,
@@ -32,16 +33,20 @@ function IndividualPlan({
 
   return (
     <>
-      <span className="current-plan-label visible-xs">{currentPlanLabel}</span>
-      <Tooltip
+      <span className="current-plan-label d-md-none">{currentPlanLabel}</span>
+      <OLTooltip
         description={t('plan_tooltip', { plan: plan.name })}
         id="individual-plan"
         overlayProps={{ placement: 'bottom' }}
       >
-        <a href={featuresPageURL} className="current-plan-label hidden-xs">
-          {currentPlanLabel} <span className="info-badge" />
+        <a
+          href={featuresPageURL}
+          className="current-plan-label d-none d-md-inline-block"
+        >
+          {currentPlanLabel}&nbsp;
+          <MaterialIcon type="info" className="current-plan-label-icon" />
         </a>
-      </Tooltip>
+      </OLTooltip>
     </>
   )
 }

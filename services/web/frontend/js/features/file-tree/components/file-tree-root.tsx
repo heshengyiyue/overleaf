@@ -6,6 +6,7 @@ import FileTreeContext from './file-tree-context'
 import FileTreeDraggablePreviewLayer from './file-tree-draggable-preview-layer'
 import FileTreeFolderList from './file-tree-folder-list'
 import FileTreeToolbar from './file-tree-toolbar'
+import FileTreeToolbarNew from '@/features/ide-redesign/components/file-tree/file-tree-toolbar'
 import FileTreeModalDelete from './modals/file-tree-modal-delete'
 import FileTreeModalCreateFolder from './modals/file-tree-modal-create-folder'
 import FileTreeModalError from './modals/file-tree-modal-error'
@@ -18,6 +19,7 @@ import FileTreeInner from './file-tree-inner'
 import { useDragLayer } from 'react-dnd'
 import classnames from 'classnames'
 import { pathInFolder } from '@/features/file-tree/util/path'
+import { useIsNewEditorEnabled } from '@/features/ide-redesign/utils/new-editor-utils'
 
 const FileTreeRoot = React.memo<{
   onSelect: () => void
@@ -26,11 +28,9 @@ const FileTreeRoot = React.memo<{
   isConnected: boolean
   setRefProviderEnabled: () => void
   setStartedFreeTrial: () => void
-  reindexReferences: () => void
   refProviders: Record<string, boolean>
 }>(function FileTreeRoot({
   refProviders,
-  reindexReferences,
   setRefProviderEnabled,
   setStartedFreeTrial,
   onSelect,
@@ -43,6 +43,7 @@ const FileTreeRoot = React.memo<{
   const { _id: projectId } = useProjectContext()
   const { fileTreeData } = useFileTreeData()
   const isReady = Boolean(projectId && fileTreeData)
+  const newEditor = useIsNewEditorEnabled()
 
   useEffect(() => {
     if (fileTreeContainer) {
@@ -95,12 +96,11 @@ const FileTreeRoot = React.memo<{
           refProviders={refProviders}
           setRefProviderEnabled={setRefProviderEnabled}
           setStartedFreeTrial={setStartedFreeTrial}
-          reindexReferences={reindexReferences}
           onSelect={onSelect}
           fileTreeContainer={fileTreeContainer}
         >
           {isConnected ? null : <div className="disconnected-overlay" />}
-          <FileTreeToolbar />
+          {newEditor ? <FileTreeToolbarNew /> : <FileTreeToolbar />}
           <FileTreeContextMenu />
           <FileTreeInner>
             <FileTreeRootFolder onDelete={onDelete} />
@@ -139,7 +139,7 @@ function FileTreeRootFolder({ onDelete }: { onDelete: () => void }) {
             'file-tree-dragging': dragLayer.isDragging,
           }),
         }}
-        dropRef={dropRef as any}
+        dropRef={dropRef}
         dataTestId="file-tree-list-root"
       />
     </>

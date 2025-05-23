@@ -93,22 +93,32 @@ const HistoryManager = {
 
   MAX_PARALLEL_REQUESTS: 4,
 
-  resyncProjectHistory(projectId, projectHistoryId, docs, files, callback) {
+  resyncProjectHistory(
+    projectId,
+    projectHistoryId,
+    docs,
+    files,
+    opts,
+    callback
+  ) {
     ProjectHistoryRedisManager.queueResyncProjectStructure(
       projectId,
       projectHistoryId,
       docs,
       files,
+      opts,
       function (error) {
         if (error) {
           return callback(error)
         }
+        if (opts.resyncProjectStructureOnly) return callback()
         const DocumentManager = require('./DocumentManager')
         const resyncDoc = (doc, cb) => {
           DocumentManager.resyncDocContentsWithLock(
             projectId,
             doc.doc,
             doc.path,
+            opts,
             cb
           )
         }

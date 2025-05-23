@@ -1,33 +1,23 @@
+import { ReactNode, useEffect } from 'react'
 import {
   ProjectListProvider,
   useProjectListContext,
 } from '../context/project-list-context'
+import { SplitTestProvider } from '@/shared/context/split-test-context'
 import { ColorPickerProvider } from '../context/color-picker-context'
 import * as eventTracking from '../../../infrastructure/event-tracking'
-import { Col, Row } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 import useWaitForI18n from '../../../shared/hooks/use-wait-for-i18n'
-import CurrentPlanWidget from './current-plan-widget/current-plan-widget'
-import NewProjectButton from './new-project-button'
-import ProjectListTable from './table/project-list-table'
-import SurveyWidget from './survey-widget'
-import WelcomeMessage from './welcome-message'
 import LoadingBranded from '../../../shared/components/loading-branded'
 import SystemMessages from '../../../shared/components/system-messages'
-import UserNotifications from './notifications/user-notifications'
-import SearchForm from './search-form'
-import ProjectsDropdown from './dropdown/projects-dropdown'
-import SortByDropdown from './dropdown/sort-by-dropdown'
-import ProjectTools from './table/project-tools/project-tools'
-import ProjectListTitle from './title/project-list-title'
-import Sidebar from './sidebar/sidebar'
-import LoadMore from './load-more'
-import { useEffect } from 'react'
 import withErrorBoundary from '../../../infrastructure/error-boundary'
-import { GenericErrorBoundaryFallback } from '../../../shared/components/generic-error-boundary-fallback'
-import { SplitTestProvider } from '@/shared/context/split-test-context'
-import { bsVersion } from '@/features/utils/bootstrap-5'
-import classnames from 'classnames'
+import { GenericErrorBoundaryFallback } from '@/shared/components/generic-error-boundary-fallback'
+import getMeta from '@/utils/meta'
+import DefaultNavbar from '@/features/ui/components/bootstrap-5/navbar/default-navbar'
+import Footer from '@/features/ui/components/bootstrap-5/footer/footer'
+import WelcomePageContent from '@/features/project-list/components/welcome-page-content'
+import { ProjectListDsNav } from '@/features/project-list/components/project-list-ds-nav'
+import { DsNavStyleProvider } from '@/features/project-list/components/use-is-ds-nav'
 
 function ProjectListRoot() {
   const { isReady } = useWaitForI18n()
@@ -51,21 +41,36 @@ export function ProjectListRootInner() {
   )
 }
 
-function ProjectListPageContent() {
-  const {
-    totalProjectsCount,
-    error,
-    isLoading,
-    loadProgress,
-    searchText,
-    setSearchText,
-    selectedProjects,
-    filter,
-    tags,
-    selectedTagId,
-  } = useProjectListContext()
+function DefaultNavbarAndFooter({ children }: { children: ReactNode }) {
+  const navbarProps = getMeta('ol-navbar')
+  const footerProps = getMeta('ol-footer')
 
-  const selectedTag = tags.find(tag => tag._id === selectedTagId)
+  return (
+    <>
+      <DefaultNavbar {...navbarProps} />
+      <main
+        id="main-content"
+        className="content content-alt project-list-react"
+      >
+        {children}
+      </main>
+      <Footer {...footerProps} />
+    </>
+  )
+}
+
+function DefaultPageContentWrapper({ children }: { children: ReactNode }) {
+  return (
+    <DefaultNavbarAndFooter>
+      <SystemMessages />
+      <div className="project-list-wrapper">{children}</div>
+    </DefaultNavbarAndFooter>
+  )
+}
+
+function ProjectListPageContent() {
+  const { totalProjectsCount, isLoading, loadProgress } =
+    useProjectListContext()
 
   useEffect(() => {
     eventTracking.sendMB('loads_v2_dash', {})
@@ -73,136 +78,28 @@ function ProjectListPageContent() {
 
   const { t } = useTranslation()
 
-  return isLoading ? (
-    <div className="loading-container">
+  if (isLoading) {
+    const loadingComponent = (
       <LoadingBranded loadProgress={loadProgress} label={t('loading')} />
-    </div>
-  ) : (
-    <>
-      <SystemMessages />
+    )
 
-      <div
-        className={classnames(
-          'project-list-wrapper',
-          bsVersion({ bs3: 'clearfix container mx-0 px-0' })
-        )}
-      >
-        {totalProjectsCount > 0 ? (
-          <>
-            <Sidebar />
-            <div className="project-list-main-react">
-              {error ? <DashApiError /> : ''}
-              <Row>
-                <Col xs={12}>
-                  <UserNotifications />
-                </Col>
-              </Row>
-              <div className="project-list-header-row">
-                <ProjectListTitle
-                  filter={filter}
-                  selectedTag={selectedTag}
-                  className="hidden-xs text-truncate"
-                />
-                <div className="project-tools">
-                  <div className="hidden-xs">
-                    {selectedProjects.length === 0 ? (
-                      <CurrentPlanWidget />
-                    ) : (
-                      <ProjectTools />
-                    )}
-                  </div>
-                  <div className="visible-xs">
-                    <CurrentPlanWidget />
-                  </div>
-                </div>
-              </div>
-              <Row className="hidden-xs">
-                <Col md={7}>
-                  <SearchForm
-                    inputValue={searchText}
-                    setInputValue={setSearchText}
-                    filter={filter}
-                    selectedTag={selectedTag}
-                  />
-                </Col>
-              </Row>
-              <div className="project-list-sidebar-survey-wrapper visible-xs">
-                <SurveyWidget />
-              </div>
-              <div className="visible-xs mt-1">
-                <div role="toolbar" className="projects-toolbar">
-                  <ProjectsDropdown />
-                  <SortByDropdown />
-                </div>
-              </div>
-              <Row className="row-spaced">
-                <Col xs={12}>
-                  <div className="card project-list-card">
-                    <div className="visible-xs pt-2 pb-3">
-                      <div className="clearfix">
-                        <NewProjectButton
-                          id="new-project-button-projects-table"
-                          className="pull-left me-2"
-                          showAddAffiliationWidget
-                        />
-                        <SearchForm
-                          inputValue={searchText}
-                          setInputValue={setSearchText}
-                          filter={filter}
-                          selectedTag={selectedTag}
-                          className="overflow-hidden"
-                          formGroupProps={{ className: 'mb-0' }}
-                        />
-                      </div>
-                    </div>
-                    <ProjectListTable />
-                  </div>
-                </Col>
-              </Row>
-              <Row className="row-spaced">
-                <Col xs={12}>
-                  <LoadMore />
-                </Col>
-              </Row>
-            </div>
-          </>
-        ) : (
-          <div className="project-list-welcome-wrapper">
-            {error ? <DashApiError /> : ''}
-            <Row className="row-spaced mx-0">
-              <Col
-                sm={10}
-                smOffset={1}
-                md={8}
-                mdOffset={2}
-                className="project-list-empty-col"
-              >
-                <Row>
-                  <Col xs={12}>
-                    <UserNotifications />
-                  </Col>
-                </Row>
-                <WelcomeMessage />
-              </Col>
-            </Row>
-          </div>
-        )}
-      </div>
-    </>
-  )
-}
+    return loadingComponent
+  }
 
-function DashApiError() {
-  const { t } = useTranslation()
+  if (totalProjectsCount === 0) {
+    return (
+      <DefaultPageContentWrapper>
+        <WelcomePageContent />
+      </DefaultPageContentWrapper>
+    )
+  }
   return (
-    <Row className="row-spaced">
-      <Col xs={8} xsOffset={2} aria-live="polite" className="text-center">
-        <div className="alert alert-danger">
-          {t('generic_something_went_wrong')}
-        </div>
-      </Col>
-    </Row>
+    <DsNavStyleProvider>
+      <ProjectListDsNav />
+    </DsNavStyleProvider>
   )
 }
 
-export default withErrorBoundary(ProjectListRoot, GenericErrorBoundaryFallback)
+export default withErrorBoundary(ProjectListRoot, () => (
+  <GenericErrorBoundaryFallback />
+))

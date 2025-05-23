@@ -3,7 +3,7 @@ const sinon = require('sinon')
 const modulePath =
   '../../../../app/src/Features/Subscription/SubscriptionUpdater'
 const { assert, expect } = require('chai')
-const { ObjectId } = require('mongodb')
+const { ObjectId } = require('mongodb-legacy')
 
 describe('SubscriptionUpdater', function () {
   beforeEach(function () {
@@ -148,6 +148,7 @@ describe('SubscriptionUpdater', function () {
     this.AnalyticsManager = {
       recordEventForUserInBackground: sinon.stub().resolves(),
       setUserPropertyForUserInBackground: sinon.stub(),
+      registerAccountMapping: sinon.stub(),
     }
 
     this.Features = {
@@ -175,6 +176,9 @@ describe('SubscriptionUpdater', function () {
           DeletedSubscription: this.DeletedSubscription,
         },
         '../Analytics/AnalyticsManager': this.AnalyticsManager,
+        '../Analytics/AccountMappingHelper': (this.AccountMappingHelper = {
+          generateSubscriptionToRecurlyMapping: sinon.stub(),
+        }),
         '../../infrastructure/Features': this.Features,
         '../User/UserAuditLogHandler': this.UserAuditLogHandler,
       },
@@ -280,6 +284,41 @@ describe('SubscriptionUpdater', function () {
       ).to.have.been.calledWith(this.adminUser._id)
     })
 
+    it('should send a recurly account mapping event', async function () {
+      const createdAt = new Date().toISOString()
+      this.AccountMappingHelper.generateSubscriptionToRecurlyMapping.returns({
+        source: 'recurly',
+        sourceEntity: 'subscription',
+        sourceEntityId: this.recurlySubscription.uuid,
+        target: 'v2',
+        targetEntity: 'subscription',
+        targetEntityId: this.subscription._id,
+        createdAt,
+      })
+      await this.SubscriptionUpdater.promises.updateSubscriptionFromRecurly(
+        this.recurlySubscription,
+        this.subscription,
+        {}
+      )
+      expect(
+        this.AccountMappingHelper.generateSubscriptionToRecurlyMapping
+      ).to.have.been.calledWith(
+        this.subscription._id,
+        this.recurlySubscription.uuid
+      )
+      expect(
+        this.AnalyticsManager.registerAccountMapping
+      ).to.have.been.calledWith({
+        source: 'recurly',
+        sourceEntity: 'subscription',
+        sourceEntityId: this.recurlySubscription.uuid,
+        target: 'v2',
+        targetEntity: 'subscription',
+        targetEntityId: this.subscription._id,
+        createdAt,
+      })
+    })
+
     it('should remove the subscription when expired', async function () {
       this.recurlySubscription.state = 'expired'
       await this.SubscriptionUpdater.promises.updateSubscriptionFromRecurly(
@@ -307,7 +346,7 @@ describe('SubscriptionUpdater', function () {
 
     it('should not remove the subscription when expired if it has Group SSO enabled', async function () {
       this.Features.hasFeature.withArgs('saas').returns(true)
-      this.subscription.ssoConfig = new ObjectId('abc123abc123')
+      this.subscription.ssoConfig = new ObjectId('abc123abc123abc123abc123')
 
       this.recurlySubscription.state = 'expired'
       await this.SubscriptionUpdater.promises.updateSubscriptionFromRecurly(
@@ -760,6 +799,40 @@ describe('SubscriptionUpdater', function () {
           this.FeaturesUpdater.promises.scheduleRefreshFeatures
         ).to.have.been.calledWith(userId)
       }
+    })
+  })
+
+  describe('scheduleRefreshFeatures', function () {
+    it('should call upgrades feature for personal subscription from admin_id', async function () {
+      this.subscription = {
+        _id: new ObjectId().toString(),
+        mock: 'subscription',
+        admin_id: new ObjectId(),
+      }
+
+      await this.SubscriptionUpdater.promises.scheduleRefreshFeatures(
+        this.subscription
+      )
+
+      expect(
+        this.FeaturesUpdater.promises.scheduleRefreshFeatures
+      ).to.have.been.calledOnceWith(this.subscription.admin_id)
+    })
+
+    it('should call upgrades feature for group subscription from admin_id and member_ids', async function () {
+      this.subscription = {
+        _id: new ObjectId().toString(),
+        mock: 'subscription',
+        admin_id: new ObjectId(),
+        member_ids: [new ObjectId(), new ObjectId(), new ObjectId()],
+      }
+      await this.SubscriptionUpdater.promises.scheduleRefreshFeatures(
+        this.subscription
+      )
+
+      expect(
+        this.FeaturesUpdater.promises.scheduleRefreshFeatures.callCount
+      ).to.equal(4)
     })
   })
 })

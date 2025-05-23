@@ -14,8 +14,8 @@ const sinon = require('sinon')
 const { expect } = require('chai')
 const modulePath = '../../../app/js/Notifications.js'
 const SandboxedModule = require('sandboxed-module')
-const assert = require('assert')
-const { ObjectId } = require('mongodb')
+const assert = require('node:assert')
+const { ObjectId } = require('mongodb-legacy')
 
 const userId = '51dc93e6fb625a261300003b'
 const notificationId = '574ee8d6f40c3a244e704249'

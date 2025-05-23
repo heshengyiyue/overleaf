@@ -10,6 +10,7 @@ import {
   getFoldRange,
 } from '../../utils/tree-query'
 import { closeBracketConfig } from './close-bracket-config'
+import { noSpellCheckProp } from '@/features/source-editor/utils/node-props'
 
 const styleOverrides: Record<string, any> = {
   DocumentClassCtrlSeq: t.keyword,
@@ -39,19 +40,32 @@ const Styles = {
 
 const typeMap: Record<string, string[]> = {
   // commands that are section headings
-  PartCtrlSeq: ['$SectioningCommand'],
-  ChapterCtrlSeq: ['$SectioningCommand'],
-  SectionCtrlSeq: ['$SectioningCommand'],
-  SubSectionCtrlSeq: ['$SectioningCommand'],
-  SubSubSectionCtrlSeq: ['$SectioningCommand'],
-  ParagraphCtrlSeq: ['$SectioningCommand'],
-  SubParagraphCtrlSeq: ['$SectioningCommand'],
+  PartCtrlSeq: ['$SectioningCtrlSeq'],
+  ChapterCtrlSeq: ['$SectioningCtrlSeq'],
+  SectionCtrlSeq: ['$SectioningCtrlSeq'],
+  SubSectionCtrlSeq: ['$SectioningCtrlSeq'],
+  SubSubSectionCtrlSeq: ['$SectioningCtrlSeq'],
+  ParagraphCtrlSeq: ['$SectioningCtrlSeq'],
+  SubParagraphCtrlSeq: ['$SectioningCtrlSeq'],
   // commands that have a "command tooltip"
   HrefCommand: ['$CommandTooltipCommand'],
   Include: ['$CommandTooltipCommand'],
   Input: ['$CommandTooltipCommand'],
   Ref: ['$CommandTooltipCommand'],
   UrlCommand: ['$CommandTooltipCommand'],
+  // text formatting commands that can be toggled via the toolbar
+  TextBoldCommand: ['$ToggleTextFormattingCommand'],
+  TextItalicCommand: ['$ToggleTextFormattingCommand'],
+  // text formatting commands that cannot be toggled via the toolbar
+  TextSmallCapsCommand: ['$OtherTextFormattingCommand'],
+  TextTeletypeCommand: ['$OtherTextFormattingCommand'],
+  TextMediumCommand: ['$OtherTextFormattingCommand'],
+  TextSansSerifCommand: ['$OtherTextFormattingCommand'],
+  TextSuperscriptCommand: ['$OtherTextFormattingCommand'],
+  TextSubscriptCommand: ['$OtherTextFormattingCommand'],
+  StrikeOutCommand: ['$OtherTextFormattingCommand'],
+  EmphasisCommand: ['$OtherTextFormattingCommand'],
+  UnderlineCommand: ['$OtherTextFormattingCommand'],
 }
 
 export const LaTeXLanguage = LRLanguage.define({
@@ -76,7 +90,7 @@ export const LaTeXLanguage = LRLanguage.define({
         // enough? For some reason it doesn't work if there's a newline after
         // \section{a}, but works for \section{a}b
         $Environment: node => node.getChild('Content'),
-        $SectioningCommand: node => {
+        $Section: node => {
           const BACKWARDS = -1
           const lastChild = node.resolveInner(node.to, BACKWARDS)
           const content = node.getChild('Content')
@@ -105,6 +119,26 @@ export const LaTeXLanguage = LRLanguage.define({
           return content
         },
       }),
+      // disable spell check in these node types when they're inside these parents (empty string = any parent)
+      noSpellCheckProp.add({
+        BibKeyArgument: [['']],
+        BibliographyArgument: [['']],
+        BibliographyStyleArgument: [['']],
+        DocumentClassArgument: [['']],
+        LabelArgument: [['']],
+        PackageArgument: [['']],
+        RefArgument: [['']],
+        OptionalArgument: [
+          ['DocumentClass'],
+          ['IncludeGraphics'],
+          ['LineBreak'],
+          ['UsePackage'],
+          ['FigureEnvironment', 'BeginEnv'],
+          ['ListEnvironment', 'BeginEnv'],
+        ],
+        ShortTextArgument: [['Date'], ['SetLengthCommand']],
+        TextArgument: [['TabularEnvironment', 'BeginEnv']],
+      }),
       // TODO: does this override groups defined in the grammar?
       NodeProp.group.add(type => {
         const types = []
@@ -129,14 +163,8 @@ export const LaTeXLanguage = LRLanguage.define({
           ) {
             types.push('$TextArgument')
           }
-        } else if (type.name.endsWith('Environment')) {
-          types.push('$Environment')
         } else if (type.name.endsWith('Brace')) {
           types.push('$Brace')
-        } else if (
-          ['BracketMath', 'ParenMath', 'DollarMath'].includes(type.name)
-        ) {
-          types.push('$MathContainer')
         }
 
         if (type.name in typeMap) {
@@ -168,7 +196,7 @@ export const LaTeXLanguage = LRLanguage.define({
         'MathGroup/OpenBrace MathGroup/CloseBrace': t.string,
         'MathTextCommand/TextArgument/OpenBrace MathTextCommand/TextArgument/CloseBrace':
           t.string,
-        'MathOpening/LeftCtrlSeq MathClosing/RightCtrlSeq MathCommand/CtrlSeq MathTextCommand/CtrlSeq':
+        'MathOpening/LeftCtrlSeq MathClosing/RightCtrlSeq MathUnknownCommand/CtrlSeq MathTextCommand/CtrlSeq':
           t.literal,
         MathDelimiter: t.literal,
         DoubleDollar: t.keyword,

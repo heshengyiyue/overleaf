@@ -2,19 +2,22 @@ import {
   FC,
   HTMLProps,
   PropsWithChildren,
+  useCallback,
   useEffect,
   useRef,
   useState,
 } from 'react'
 import Icon from '../../../../shared/components/icon'
-import { Overlay, Popover } from 'react-bootstrap'
 import { useTranslation } from 'react-i18next'
 import { EditorView } from '@codemirror/view'
 import { PastedContent } from '../../extensions/visual/pasted-content'
 import useEventListener from '../../../../shared/hooks/use-event-listener'
 import { FeedbackBadge } from '@/shared/components/feedback-badge'
-
-const isMac = /Mac/.test(window.navigator?.platform)
+import { sendMB } from '@/infrastructure/event-tracking'
+import MaterialIcon from '@/shared/components/material-icon'
+import OLOverlay from '@/features/ui/components/ol/ol-overlay'
+import OLPopover from '@/features/ui/components/ol/ol-popover'
+import { isMac } from '@/shared/utils/os'
 
 export const PastedContentMenu: FC<{
   insertPastedContent: (
@@ -32,9 +35,33 @@ export const PastedContentMenu: FC<{
 
   // record whether the Shift key is currently down, for use in the `paste` event handler
   const shiftRef = useRef(false)
-  useEventListener('keydown', (event: KeyboardEvent) => {
-    shiftRef.current = event.shiftKey
+  useEventListener(
+    'keydown',
+    useCallback((event: KeyboardEvent) => {
+      shiftRef.current = event.shiftKey
+    }, [])
+  )
+
+  // track interaction events
+  const trackedEventsRef = useRef<Record<string, boolean>>({
+    'pasted-content-button-shown': false,
+    'pasted-content-button-click': false,
   })
+
+  const trackEventOnce = useCallback((key: string) => {
+    if (!trackedEventsRef.current[key]) {
+      trackedEventsRef.current[key] = true
+      sendMB(key)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (menuOpen) {
+      trackEventOnce('pasted-content-button-click')
+    } else {
+      trackEventOnce('pasted-content-button-shown')
+    }
+  }, [menuOpen, trackEventOnce])
 
   useEffect(() => {
     if (menuOpen) {
@@ -73,22 +100,22 @@ export const PastedContentMenu: FC<{
         onClick={() => setMenuOpen(isOpen => !isOpen)}
         style={{ userSelect: 'none' }}
       >
-        <Icon type="clipboard" fw />
-        <Icon type="caret-down" fw />
+        <MaterialIcon type="content_copy" />
+        <MaterialIcon type="expand_more" />
       </button>
 
       {menuOpen && (
-        <Overlay
+        <OLOverlay
           show
           onHide={() => setMenuOpen(false)}
-          animation={false}
+          transition={false}
           container={view.scrollDOM}
           containerPadding={0}
           placement="bottom"
           rootClose
-          target={toggleButtonRef.current ?? undefined}
+          target={toggleButtonRef?.current}
         >
-          <Popover
+          <OLPopover
             id="popover-pasted-content-menu"
             className="ol-cm-pasted-content-menu-popover"
           >
@@ -101,6 +128,9 @@ export const PastedContentMenu: FC<{
               <MenuItem
                 onClick={() => {
                   insertPastedContent(view, pastedContent, true)
+                  sendMB('pasted-content-menu-click', {
+                    action: 'paste-with-formatting',
+                  })
                   setMenuOpen(false)
                 }}
               >
@@ -118,6 +148,9 @@ export const PastedContentMenu: FC<{
               <MenuItem
                 onClick={() => {
                   insertPastedContent(view, pastedContent, false)
+                  sendMB('pasted-content-menu-click', {
+                    action: 'paste-without-formatting',
+                  })
                   setMenuOpen(false)
                 }}
               >
@@ -139,6 +172,9 @@ export const PastedContentMenu: FC<{
                     'https://docs.google.com/forms/d/e/1FAIpQLSc7WcHrwz9fnCkUP5hXyvkG3LkSYZiR3lVJWZ0o6uqNQYrV7Q/viewform',
                     '_blank'
                   )
+                  sendMB('pasted-content-menu-click', {
+                    action: 'give-feedback',
+                  })
                   setMenuOpen(false)
                 }}
               >
@@ -151,8 +187,8 @@ export const PastedContentMenu: FC<{
                 </span>
               </MenuItem>
             </div>
-          </Popover>
-        </Overlay>
+          </OLPopover>
+        </OLOverlay>
       )}
     </>
   )

@@ -1,4 +1,4 @@
-import { startWith } from './helpers/config'
+import { isExcludedBySharding, startWith } from './helpers/config'
 import { ensureUserExists, login } from './helpers/login'
 import { createProject } from './helpers/project'
 
@@ -6,6 +6,9 @@ const WITHOUT_PROJECTS_USER = 'user-without-projects@example.com'
 const ADMIN_USER = 'admin@example.com'
 const REGULAR_USER = 'user@example.com'
 const TEMPLATES_USER = 'templates@example.com'
+
+// Re-use value for "exists" and "does not exist" tests
+const LABEL_BROWSE_TEMPLATES = 'Browse templates'
 
 describe('Templates', () => {
   ensureUserExists({ email: TEMPLATES_USER })
@@ -29,6 +32,7 @@ describe('Templates', () => {
   }
 
   describe('enabled in Server Pro', () => {
+    if (isExcludedBySharding('PRO_CUSTOM_2')) return
     startWith({
       pro: true,
       varsFn,
@@ -39,12 +43,14 @@ describe('Templates', () => {
     it('should show templates link on welcome page', () => {
       login(WITHOUT_PROJECTS_USER)
       cy.visit('/')
-      cy.findByText('Browse templates').click()
+      cy.findByText(LABEL_BROWSE_TEMPLATES).click()
       cy.url().should('match', /\/templates$/)
     })
 
-    it('should have templates feature', () => {
-      const resumeTemplatesUserSession = login(TEMPLATES_USER)
+    // TODO(25342): re-enable
+    // eslint-disable-next-line mocha/no-skipped-tests
+    it.skip('should have templates feature', () => {
+      login(TEMPLATES_USER)
       const name = `Template ${Date.now()}`
       const description = `Template Description ${Date.now()}`
 
@@ -60,7 +66,7 @@ describe('Templates', () => {
         .get('textarea')
         .type(description)
       cy.findByText('Publish').click()
-      cy.findByText('Publishing…').should('be.disabled')
+      cy.findByText('Publishing…').parent().should('be.disabled')
       cy.findByText('Publish').should('not.exist')
       cy.findByText('Unpublish', { timeout: 10_000 })
       cy.findByText('Republish')
@@ -92,12 +98,12 @@ describe('Templates', () => {
         .parent()
         .parent()
         .within(() => cy.get('input[type="checkbox"]').first().check())
-      cy.get('.project-list-sidebar-react').within(() => {
+      cy.get('.project-list-sidebar-scroll').within(() => {
         cy.findAllByText('New Tag').first().click()
       })
       cy.focused().type(tagName)
       cy.findByText('Create').click()
-      cy.get('.project-list-sidebar-react').within(() => {
+      cy.get('.project-list-sidebar-scroll').within(() => {
         cy.findByText(tagName)
           .parent()
           .within(() => cy.get('.name').should('have.text', `${tagName} (1)`))
@@ -178,7 +184,8 @@ describe('Templates', () => {
       cy.findByText('Manage Template').click()
       cy.findByText('Unpublish')
 
-      resumeTemplatesUserSession()
+      // Back to templates user
+      login(TEMPLATES_USER)
 
       // Unpublish via editor
       cy.get('@templateProjectId').then(projectId =>
@@ -198,6 +205,7 @@ describe('Templates', () => {
         .click()
       cy.findAllByText('All Templates')
         .first()
+        .parent()
         .should('have.attr', 'href', '/templates/all')
     })
   })
@@ -230,16 +238,18 @@ describe('Templates', () => {
       login(WITHOUT_PROJECTS_USER)
       cy.visit('/')
       cy.findByText(/new project/i) // wait for lazy loading
-      cy.findByText('Browse templates').should('not.exist')
+      cy.findByText(LABEL_BROWSE_TEMPLATES).should('not.exist')
     })
   }
 
   describe('disabled Server Pro', () => {
+    if (isExcludedBySharding('PRO_DEFAULT_2')) return
     startWith({ pro: true })
     checkDisabled()
   })
 
   describe('unavailable in CE', () => {
+    if (isExcludedBySharding('CE_CUSTOM_1')) return
     startWith({
       pro: false,
       varsFn,

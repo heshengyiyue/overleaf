@@ -1,11 +1,10 @@
 import usePersistedState from '../../../shared/hooks/use-persisted-state'
 import getMeta from '../../../utils/meta'
-import { Survey } from '../../../../../types/project/dashboard/survey'
 import { useCallback } from 'react'
 import Close from '@/shared/components/close'
 
 export default function SurveyWidget() {
-  const survey: Survey = getMeta('ol-survey')
+  const survey = getMeta('ol-survey')
   const [dismissedSurvey, setDismissedSurvey] = usePersistedState(
     `dismissed-${survey?.name}`,
     false
@@ -22,7 +21,7 @@ export default function SurveyWidget() {
   return (
     <div className="user-notifications">
       <div className="notification-entry">
-        <div role="alert" className="alert alert-info-alt">
+        <div role="alert" className="survey-notification">
           <div className="notification-body">
             {survey.preText}&nbsp;
             <a

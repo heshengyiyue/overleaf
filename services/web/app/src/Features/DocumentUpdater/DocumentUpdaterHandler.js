@@ -8,47 +8,28 @@ const metrics = require('@overleaf/metrics')
 const { promisify } = require('util')
 const { promisifyMultiResult } = require('@overleaf/promise-utils')
 const ProjectGetter = require('../Project/ProjectGetter')
+const FileStoreHandler = require('../FileStore/FileStoreHandler')
+const Features = require('../../infrastructure/Features')
 
-module.exports = {
-  flushProjectToMongo,
-  flushMultipleProjectsToMongo,
-  flushProjectToMongoAndDelete,
-  flushDocToMongo,
-  deleteDoc,
-  getDocument,
-  setDocument,
-  getProjectDocsIfMatch,
-  clearProjectState,
-  acceptChanges,
-  resolveThread,
-  reopenThread,
-  deleteThread,
-  resyncProjectHistory,
-  updateProjectStructure,
-  promises: {
-    flushProjectToMongo: promisify(flushProjectToMongo),
-    flushMultipleProjectsToMongo: promisify(flushMultipleProjectsToMongo),
-    flushProjectToMongoAndDelete: promisify(flushProjectToMongoAndDelete),
-    flushDocToMongo: promisify(flushDocToMongo),
-    deleteDoc: promisify(deleteDoc),
-    getDocument: promisifyMultiResult(getDocument, [
-      'lines',
-      'version',
-      'ranges',
-      'ops',
-    ]),
-    setDocument: promisify(setDocument),
-    getProjectDocsIfMatch: promisify(getProjectDocsIfMatch),
-    clearProjectState: promisify(clearProjectState),
-    acceptChanges: promisify(acceptChanges),
-    resolveThread: promisify(resolveThread),
-    reopenThread: promisify(reopenThread),
-    deleteThread: promisify(deleteThread),
-    resyncProjectHistory: promisify(resyncProjectHistory),
-    updateProjectStructure: promisify(updateProjectStructure),
-  },
+function getProjectLastUpdatedAt(projectId, callback) {
+  _makeRequest(
+    {
+      path: `/project/${projectId}/last_updated_at`,
+      method: 'GET',
+      json: true,
+    },
+    projectId,
+    'project.redis.last_updated_at',
+    (err, body) => {
+      if (err || !body?.lastUpdatedAt) return callback(err, null)
+      callback(null, new Date(body.lastUpdatedAt))
+    }
+  )
 }
 
+/**
+ * @param {string} projectId
+ */
 function flushProjectToMongo(projectId, callback) {
   _makeRequest(
     {
@@ -68,6 +49,9 @@ function flushMultipleProjectsToMongo(projectIds, callback) {
   async.series(jobs, callback)
 }
 
+/**
+ * @param {string} projectId
+ */
 function flushProjectToMongoAndDelete(projectId, callback) {
   _makeRequest(
     {
@@ -80,6 +64,11 @@ function flushProjectToMongoAndDelete(projectId, callback) {
   )
 }
 
+/**
+ * @param {string} projectId
+ * @param {string} docId
+ * @param {Callback} callback
+ */
 function flushDocToMongo(projectId, docId, callback) {
   _makeRequest(
     {
@@ -113,6 +102,23 @@ function deleteDoc(projectId, docId, ignoreFlushErrors, callback) {
   )
 }
 
+function getComment(projectId, docId, commentId, callback) {
+  _makeRequest(
+    {
+      path: `/project/${projectId}/doc/${docId}/comment/${commentId}`,
+      json: true,
+    },
+    projectId,
+    'get-comment',
+    function (error, comment) {
+      if (error) {
+        return callback(error)
+      }
+      callback(null, comment)
+    }
+  )
+}
+
 function getDocument(projectId, docId, fromVersion, callback) {
   _makeRequest(
     {
@@ -143,6 +149,23 @@ function setDocument(projectId, docId, userId, docLines, source, callback) {
     },
     projectId,
     'set-document',
+    callback
+  )
+}
+
+function appendToDocument(projectId, docId, userId, lines, source, callback) {
+  _makeRequest(
+    {
+      path: `/project/${projectId}/doc/${docId}/append`,
+      method: 'POST',
+      json: {
+        lines,
+        source,
+        user_id: userId,
+      },
+    },
+    projectId,
+    'append-to-document',
     callback
   )
 }
@@ -267,18 +290,92 @@ function resyncProjectHistory(
   projectHistoryId,
   docs,
   files,
+  opts,
   callback
 ) {
+  docs = docs.map(doc => ({
+    doc: doc.doc._id,
+    path: doc.path,
+  }))
+  const hasFilestore = Features.hasFeature('filestore')
+  if (!hasFilestore) {
+    // Files without a hash likely do not have a blob. Abort.
+    for (const { file } of files) {
+      if (!file.hash) {
+        return callback(
+          new OError('found file with missing hash', { projectId, file })
+        )
+      }
+    }
+  }
+  files = files.map(file => ({
+    file: file.file._id,
+    path: file.path,
+    url: hasFilestore
+      ? FileStoreHandler._buildUrl(projectId, file.file._id)
+      : undefined,
+    _hash: file.file.hash,
+    createdBlob: !hasFilestore,
+    metadata: buildFileMetadataForHistory(file.file),
+  }))
+
+  const body = { docs, files, projectHistoryId }
+  if (opts.historyRangesMigration) {
+    body.historyRangesMigration = opts.historyRangesMigration
+  }
+  if (opts.resyncProjectStructureOnly) {
+    body.resyncProjectStructureOnly = opts.resyncProjectStructureOnly
+  }
   _makeRequest(
     {
       path: `/project/${projectId}/history/resync`,
-      json: { docs, files, projectHistoryId },
+      json: body,
       method: 'POST',
       timeout: 6 * 60 * 1000, // allow 6 minutes for resync
     },
     projectId,
     'resync-project-history',
     callback
+  )
+}
+
+/**
+ * Block a project from being loaded in docupdater
+ *
+ * @param {string} projectId
+ * @param {Callback} callback
+ */
+function blockProject(projectId, callback) {
+  _makeRequest(
+    { path: `/project/${projectId}/block`, method: 'POST', json: true },
+    projectId,
+    'block-project',
+    (err, body) => {
+      if (err) {
+        return callback(err)
+      }
+      callback(null, body.blocked)
+    }
+  )
+}
+
+/**
+ * Unblock a previously blocked project
+ *
+ * @param {string} projectId
+ * @param {Callback} callback
+ */
+function unblockProject(projectId, callback) {
+  _makeRequest(
+    { path: `/project/${projectId}/unblock`, method: 'POST', json: true },
+    projectId,
+    'unblock-project',
+    (err, body) => {
+      if (err) {
+        return callback(err)
+      }
+      callback(null, body.wasBlocked)
+    }
   )
 }
 
@@ -319,6 +416,17 @@ function updateProjectStructure(
         changes.newDocs,
         historyRangesSupport
       )
+      const hasFilestore = Features.hasFeature('filestore')
+      if (!hasFilestore) {
+        for (const newEntity of changes.newFiles || []) {
+          if (!newEntity.file.hash) {
+            // Files without a hash likely do not have a blob. Abort.
+            return callback(
+              new OError('found file with missing hash', { newEntity })
+            )
+          }
+        }
+      }
       const {
         deletes: fileDeletes,
         adds: fileAdds,
@@ -449,6 +557,7 @@ function _getUpdates(
       })
     }
   }
+  const hasFilestore = Features.hasFeature('filestore')
 
   for (const id in newEntitiesHash) {
     const newEntity = newEntitiesHash[id]
@@ -463,8 +572,10 @@ function _getUpdates(
         docLines: newEntity.docLines,
         ranges: newEntity.ranges,
         historyRangesSupport,
-        url: newEntity.url,
+        url: newEntity.file != null && hasFilestore ? newEntity.url : undefined,
         hash: newEntity.file != null ? newEntity.file.hash : undefined,
+        metadata: buildFileMetadataForHistory(newEntity.file),
+        createdBlob: (newEntity.createdBlob || !hasFilestore) ?? false,
       })
     } else if (newEntity.path !== oldEntity.path) {
       // entity renamed
@@ -478,4 +589,73 @@ function _getUpdates(
   }
 
   return { deletes, adds, renames }
+}
+
+function buildFileMetadataForHistory(file) {
+  if (!file?.linkedFileData) return undefined
+
+  const metadata = {
+    // Files do not have a created at timestamp in the history.
+    // For cloned projects, the importedAt timestamp needs to remain untouched.
+    // Record the timestamp in the metadata blob to keep everything self-contained.
+    importedAt: file.created,
+    ...file.linkedFileData,
+  }
+  if (metadata.provider === 'project_output_file') {
+    // The build-id and clsi-server-id are only used for downloading file.
+    // Omit them from history as they are not useful in the future.
+    delete metadata.build_id
+    delete metadata.clsiServerId
+  }
+  return metadata
+}
+
+module.exports = {
+  flushProjectToMongo,
+  flushMultipleProjectsToMongo,
+  flushProjectToMongoAndDelete,
+  flushDocToMongo,
+  deleteDoc,
+  getComment,
+  getDocument,
+  getProjectLastUpdatedAt,
+  setDocument,
+  appendToDocument,
+  getProjectDocsIfMatch,
+  clearProjectState,
+  acceptChanges,
+  resolveThread,
+  reopenThread,
+  deleteThread,
+  resyncProjectHistory,
+  blockProject,
+  unblockProject,
+  updateProjectStructure,
+  promises: {
+    flushProjectToMongo: promisify(flushProjectToMongo),
+    flushMultipleProjectsToMongo: promisify(flushMultipleProjectsToMongo),
+    flushProjectToMongoAndDelete: promisify(flushProjectToMongoAndDelete),
+    flushDocToMongo: promisify(flushDocToMongo),
+    deleteDoc: promisify(deleteDoc),
+    getComment: promisify(getComment),
+    getDocument: promisifyMultiResult(getDocument, [
+      'lines',
+      'version',
+      'ranges',
+      'ops',
+    ]),
+    setDocument: promisify(setDocument),
+    getProjectDocsIfMatch: promisify(getProjectDocsIfMatch),
+    getProjectLastUpdatedAt: promisify(getProjectLastUpdatedAt),
+    clearProjectState: promisify(clearProjectState),
+    acceptChanges: promisify(acceptChanges),
+    resolveThread: promisify(resolveThread),
+    reopenThread: promisify(reopenThread),
+    deleteThread: promisify(deleteThread),
+    resyncProjectHistory: promisify(resyncProjectHistory),
+    blockProject: promisify(blockProject),
+    unblockProject: promisify(unblockProject),
+    updateProjectStructure: promisify(updateProjectStructure),
+    appendToDocument: promisify(appendToDocument),
+  },
 }

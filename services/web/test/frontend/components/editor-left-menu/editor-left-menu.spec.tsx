@@ -8,6 +8,7 @@ import { EditorProviders } from '../../helpers/editor-providers'
 import { mockScope } from './scope'
 import { Folder } from '../../../../types/folder'
 import { docsInFolder } from '@/features/file-tree/util/docs-in-folder'
+import getMeta from '@/utils/meta'
 
 describe('<EditorLeftMenu />', function () {
   beforeEach(function () {
@@ -46,7 +47,7 @@ describe('<EditorLeftMenu />', function () {
       window.metaAttributesCache.set('ol-anonymous', false)
       window.metaAttributesCache.set('ol-gitBridgeEnabled', true)
       window.metaAttributesCache.set('ol-showSupport', true)
-      window.metaAttributesCache.set('ol-ExposedSettings', { ieeeBrandId: 123 })
+      Object.assign(getMeta('ol-ExposedSettings'), { ieeeBrandId: 123 })
       window.metaAttributesCache.set('ol-user', {
         email: 'sherlock@holmes.co.uk',
         first_name: 'Sherlock',
@@ -74,7 +75,7 @@ describe('<EditorLeftMenu />', function () {
 
       // Actions Menu
       cy.findByRole('heading', { name: 'Actions' })
-      cy.findByRole('button', { name: 'Copy Project' })
+      cy.findByRole('button', { name: 'Copy project' })
       cy.findByRole('button', { name: 'Word Count' })
 
       // Sync Menu
@@ -90,7 +91,7 @@ describe('<EditorLeftMenu />', function () {
       cy.findByLabelText('Main document')
       cy.findByLabelText('Spell check')
       cy.findByLabelText('Auto-complete')
-      cy.findByLabelText('Auto-close Brackets')
+      cy.findByLabelText('Auto-close brackets')
       cy.findByLabelText('Code check')
       cy.findByLabelText('Editor theme')
       cy.findByLabelText('Overall theme')
@@ -104,7 +105,7 @@ describe('<EditorLeftMenu />', function () {
       cy.findByRole('heading', { name: 'Help' })
       cy.findByRole('button', { name: 'Show Hotkeys' })
       cy.findByRole('link', { name: 'Documentation' })
-      cy.findByRole('button', { name: 'Contact Us' })
+      cy.findByRole('button', { name: 'Contact us' })
     })
 
     describe('download menu', function () {
@@ -153,14 +154,14 @@ describe('<EditorLeftMenu />', function () {
           </EditorProviders>
         )
 
-        cy.findByRole('button', { name: 'Copy Project' }).click()
-        cy.findByRole('heading', { name: 'Copy Project' })
+        cy.findByRole('button', { name: 'Copy project' }).click()
+        cy.findByRole('heading', { name: 'Copy project' })
 
         // try closing & re-opening the modal with different methods
         cy.findByRole('button', { name: 'Close' }).click()
-        cy.findByRole('button', { name: 'Copy Project' }).click()
+        cy.findByRole('button', { name: 'Copy project' }).click()
         cy.findByRole('button', { name: 'Cancel' }).click()
-        cy.findByRole('button', { name: 'Copy Project' }).click()
+        cy.findByRole('button', { name: 'Copy project' }).click()
 
         cy.findByLabelText('New Name').focus()
         cy.findByLabelText('New Name').clear()
@@ -265,7 +266,7 @@ describe('<EditorLeftMenu />', function () {
 
         cy.findByRole('button', { name: 'Git' }).click()
         cy.findByText('Clone with Git')
-        cy.findByText(/your project using the link displayed below/)
+        cy.findByText(/clone your project by using the link below/)
       })
 
       it('shows git modal paywall correctly', function () {
@@ -439,10 +440,12 @@ describe('<EditorLeftMenu />', function () {
           {
             name: 'Lang 1',
             code: 'lang-1',
+            dic: 'lang_1',
           },
           {
             name: 'Lang 2',
             code: 'lang-2',
+            dic: 'lang_2',
           },
         ]
 
@@ -484,7 +487,7 @@ describe('<EditorLeftMenu />', function () {
           </EditorProviders>
         )
 
-        cy.get('label[for="dictionary"] ~ button').click()
+        cy.get('label[for="dictionary-settings"] ~ button').click()
         cy.findByText('Edit Dictionary')
         cy.findByText('Your custom dictionary is empty.')
       })
@@ -725,12 +728,13 @@ describe('<EditorLeftMenu />', function () {
         cy.get<HTMLOptionElement>('#settings-menu-fontFamily option').then(
           options => {
             const values = [...options].map(o => o.value)
-            expect(values).to.deep.eq(['monaco', 'lucida'])
+            expect(values).to.deep.eq(['monaco', 'lucida', 'opendyslexicmono'])
 
             const texts = [...options].map(o => o.text)
             expect(texts).to.deep.eq([
               'Monaco / Menlo / Consolas',
               'Lucida / Source Code Pro',
+              'OpenDyslexic Mono',
             ])
           }
         )
@@ -836,7 +840,7 @@ describe('<EditorLeftMenu />', function () {
           </EditorProviders>
         )
 
-        cy.findByRole('button', { name: 'Contact Us' }).click()
+        cy.findByRole('button', { name: 'Contact us' }).click()
         cy.findByText('Affected project URL (Optional)')
       })
     })
@@ -850,7 +854,7 @@ describe('<EditorLeftMenu />', function () {
         },
       })
       window.metaAttributesCache.set('ol-anonymous', true)
-      window.metaAttributesCache.set('ol-ExposedSettings', { ieeeBrandId: 123 })
+      Object.assign(getMeta('ol-ExposedSettings'), { ieeeBrandId: 123 })
 
       cy.mount(
         <EditorProviders scope={scope}>
@@ -865,7 +869,7 @@ describe('<EditorLeftMenu />', function () {
 
       // Actions Menu
       cy.findByRole('heading', { name: 'Actions' }).should('not.exist')
-      cy.findByRole('button', { name: 'Copy Project' }).should('not.exist')
+      cy.findByRole('button', { name: 'Copy project' }).should('not.exist')
       cy.findByRole('button', { name: 'Word Count' }).should('not.exist')
 
       // Sync Menu
@@ -881,7 +885,7 @@ describe('<EditorLeftMenu />', function () {
       cy.findByLabelText('Main document').should('not.exist')
       cy.findByLabelText('Spell check').should('not.exist')
       cy.findByLabelText('Auto-complete').should('not.exist')
-      cy.findByLabelText('Auto-close Brackets').should('not.exist')
+      cy.findByLabelText('Auto-close brackets').should('not.exist')
       cy.findByLabelText('Code check').should('not.exist')
       cy.findByLabelText('Editor theme').should('not.exist')
       cy.findByLabelText('Overall theme').should('not.exist')
@@ -895,7 +899,7 @@ describe('<EditorLeftMenu />', function () {
       cy.findByRole('heading', { name: 'Help' })
       cy.findByRole('button', { name: 'Show Hotkeys' })
       cy.findByRole('button', { name: 'Documentation' }).should('not.exist')
-      cy.findByRole('link', { name: 'Contact Us' }).should('not.exist')
+      cy.findByRole('link', { name: 'Contact us' }).should('not.exist')
     })
   })
 })

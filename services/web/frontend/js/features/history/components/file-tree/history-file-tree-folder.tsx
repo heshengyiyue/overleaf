@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next'
 import HistoryFileTreeItem from './history-file-tree-item'
 import HistoryFileTreeFolderList from './history-file-tree-folder-list'
 
-import Icon from '../../../../shared/components/icon'
 import type { HistoryDoc, HistoryFileTree } from '../../utils/file-tree'
+import MaterialIcon from '@/shared/components/material-icon'
 
 type HistoryFileTreeFolderProps = {
   name: string
@@ -47,15 +47,13 @@ function HistoryFileTreeFolder({
         aria-label={expanded ? t('collapse') : t('expand')}
         className="history-file-tree-folder-button"
       >
-        <Icon
-          type={expanded ? 'angle-down' : 'angle-right'}
-          fw
+        <MaterialIcon
+          type={expanded ? 'expand_more' : 'chevron_right'}
           className="file-tree-expand-icon"
         />
       </button>
-      <Icon
-        type={expanded ? 'folder-open' : 'folder'}
-        fw
+      <MaterialIcon
+        type={expanded ? 'folder_open' : 'folder'}
         className="file-tree-folder-icon"
       />
     </>
@@ -71,7 +69,12 @@ function HistoryFileTreeFolder({
         aria-label={name}
         tabIndex={0}
         onClick={() => setExpanded(!expanded)}
-        onKeyDown={() => setExpanded(!expanded)}
+        onKeyDown={event => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            setExpanded(!expanded)
+          }
+        }}
       >
         <HistoryFileTreeItem name={name} icons={icons} />
       </li>

@@ -2,7 +2,7 @@ extends ../layout-marketing
 
 block entrypointVar
 	- entrypoint = 'pages/user/subscription/group-management/group-members'
-
+		
 block append meta
 	meta(name="ol-users", data-type="json", content=users)
 	meta(name="ol-groupId", data-type="string", content=groupId)
@@ -10,6 +10,8 @@ block append meta
 	meta(name="ol-groupSize", data-type="json", content=groupSize)
 	meta(name="ol-managedUsersActive", data-type="boolean", content=managedUsersActive)
 	meta(name="ol-groupSSOActive", data-type="boolean", content=groupSSOActive)
+	meta(name="ol-canUseFlexibleLicensing", data-type="boolean", content=canUseFlexibleLicensing)
+	meta(name="ol-canUseAddSeatsFeature", data-type="boolean", content=canUseAddSeatsFeature)
 
 block content
 	main.content.content-alt#subscription-manage-group-root

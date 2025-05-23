@@ -5,14 +5,13 @@ const AuthorizationManager = require('../Authorization/AuthorizationManager')
 const ProjectEditorHandler = require('../Project/ProjectEditorHandler')
 const Metrics = require('@overleaf/metrics')
 const CollaboratorsGetter = require('../Collaborators/CollaboratorsGetter')
-const CollaboratorsInviteHandler = require('../Collaborators/CollaboratorsInviteHandler')
+const CollaboratorsInviteGetter = require('../Collaborators/CollaboratorsInviteGetter')
 const CollaboratorsHandler = require('../Collaborators/CollaboratorsHandler')
 const PrivilegeLevels = require('../Authorization/PrivilegeLevels')
 const SessionManager = require('../Authentication/SessionManager')
 const Errors = require('../Errors/Errors')
-const DocstoreManager = require('../Docstore/DocstoreManager')
-const logger = require('@overleaf/logger')
 const { expressify } = require('@overleaf/promise-utils')
+const Settings = require('@overleaf/settings')
 
 module.exports = {
   joinProject: expressify(joinProject),
@@ -26,28 +25,6 @@ module.exports = {
   deleteEntity: expressify(deleteEntity),
   _nameIsAcceptableLength,
 }
-
-const unsupportedSpellcheckLanguages = [
-  'am',
-  'hy',
-  'bn',
-  'gu',
-  'he',
-  'hi',
-  'hu',
-  'is',
-  'kn',
-  'ml',
-  'mr',
-  'or',
-  'ss',
-  'ta',
-  'te',
-  'uk',
-  'uz',
-  'zu',
-  'fi',
-]
 
 async function joinProject(req, res, next) {
   const projectId = req.params.Project_id
@@ -76,14 +53,13 @@ async function joinProject(req, res, next) {
   if (project.deletedByExternalDataSource) {
     await ProjectDeleter.promises.unmarkAsDeletedByExternalSource(projectId)
   }
-  // disable spellchecking for currently unsupported spell check languages
-  // preserve the value in the db so they can use it again once we add back
-  // support.
-  if (
-    unsupportedSpellcheckLanguages.indexOf(project.spellCheckLanguage) !== -1
-  ) {
-    project.spellCheckLanguage = ''
+
+  if (project.spellCheckLanguage) {
+    project.spellCheckLanguage = await chooseSpellCheckLanguage(
+      project.spellCheckLanguage
+    )
   }
+
   res.json({
     project,
     privilegeLevel,
@@ -98,20 +74,6 @@ async function _buildJoinProjectView(req, projectId, userId) {
     await ProjectGetter.promises.getProjectWithoutDocLines(projectId)
   if (project == null) {
     throw new Errors.NotFoundError('project not found')
-  }
-  let deletedDocsFromDocstore = []
-  try {
-    deletedDocsFromDocstore =
-      await DocstoreManager.promises.getAllDeletedDocs(projectId)
-  } catch (err) {
-    // The query in docstore is not optimized at this time and fails for
-    // projects with many very large, deleted documents.
-    // Not serving the user with deletedDocs from docstore may cause a minor
-    //  UI issue with deleted files that are no longer available for restore.
-    logger.warn(
-      { err, projectId },
-      'soft-failure when fetching deletedDocs from docstore'
-    )
   }
   const members =
     await CollaboratorsGetter.promises.getInvitedMembersWithPrivilegeLevels(
@@ -128,7 +90,7 @@ async function _buildJoinProjectView(req, projectId, userId) {
     return { project: null, privilegeLevel: null, isRestrictedUser: false }
   }
   const invites =
-    await CollaboratorsInviteHandler.promises.getAllInvites(projectId)
+    await CollaboratorsInviteGetter.promises.getAllInvites(projectId)
   const isTokenMember = await CollaboratorsHandler.promises.userIsTokenMember(
     userId,
     projectId
@@ -148,8 +110,7 @@ async function _buildJoinProjectView(req, projectId, userId) {
     project: ProjectEditorHandler.buildProjectModelView(
       project,
       members,
-      invites,
-      deletedDocsFromDocstore
+      invites
     ),
     privilegeLevel,
     isTokenMember,
@@ -284,4 +245,33 @@ async function deleteEntity(req, res, next) {
     userId
   )
   res.sendStatus(204)
+}
+
+const supportedSpellCheckLanguages = new Set(
+  Settings.languages
+    // only include spell-check languages that are available in the client
+    .filter(language => language.dic !== undefined)
+    .map(language => language.code)
+)
+
+async function chooseSpellCheckLanguage(spellCheckLanguage) {
+  if (supportedSpellCheckLanguages.has(spellCheckLanguage)) {
+    return spellCheckLanguage
+  }
+
+  // Preserve the value in the database so they can use it again once we add back support.
+  // Map some server-only languages to a specific variant, or disable spell checking for currently unsupported spell check languages.
+  switch (spellCheckLanguage) {
+    case 'en':
+      // map "English" to "English (American)"
+      return 'en_US'
+
+    case 'no':
+      // map "Norwegian" to "Norwegian (Bokmål)"
+      return 'nb_NO'
+
+    default:
+      // map anything else to "off"
+      return ''
+  }
 }

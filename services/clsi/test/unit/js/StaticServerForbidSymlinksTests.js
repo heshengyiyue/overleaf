@@ -10,8 +10,8 @@
  * Full docs: https://github.com/decaffeinate/decaffeinate/blob/master/docs/suggestions.md
  */
 const SandboxedModule = require('sandboxed-module')
-const assert = require('assert')
-const path = require('path')
+const assert = require('node:assert')
+const path = require('node:path')
 const sinon = require('sinon')
 const modulePath = path.join(
   __dirname,
@@ -91,6 +91,23 @@ describe('StaticServerForbidSymlinks', function () {
         return done()
       }
       return this.StaticServerForbidSymlinks(this.req, this.res)
+    })
+  })
+
+  describe('with a new line', function () {
+    beforeEach(function () {
+      this.req.url = '/12345/output.pdf\nother file'
+      this.fs.realpath = sinon.stub().yields()
+    })
+
+    it('should process the correct file', function (done) {
+      this.res.sendStatus = () => {
+        this.fs.realpath.should.have.been.calledWith(
+          `${this.settings.path.compilesDir}/12345/output.pdf\nother file`
+        )
+        done()
+      }
+      this.StaticServerForbidSymlinks(this.req, this.res)
     })
   })
 

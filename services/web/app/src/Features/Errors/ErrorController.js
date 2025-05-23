@@ -65,10 +65,22 @@ async function handleError(error, req, res, next) {
       res.status(400)
       plainTextResponse(res, error.message)
     }
+  } else if (error instanceof Errors.DuplicateNameError) {
+    req.logger.setLevel('warn')
+    if (shouldSendErrorResponse) {
+      res.status(400)
+      plainTextResponse(res, error.message)
+    }
   } else if (error instanceof Errors.InvalidNameError) {
     req.logger.setLevel('warn')
     if (shouldSendErrorResponse) {
       res.status(400)
+      plainTextResponse(res, error.message)
+    }
+  } else if (error instanceof Errors.NonDeletableEntityError) {
+    req.logger.setLevel('warn')
+    if (shouldSendErrorResponse) {
+      res.status(422)
       plainTextResponse(res, error.message)
     }
   } else if (error instanceof Errors.SAMLSessionDataMissing) {
@@ -100,6 +112,12 @@ function handleApiError(err, req, res, next) {
   ) {
     req.logger.setLevel('warn')
     res.sendStatus(400)
+  } else if (err instanceof Errors.TooManyRequestsError) {
+    req.logger.setLevel('warn')
+    res.sendStatus(429)
+  } else if (err instanceof Errors.ForbiddenError) {
+    req.logger.setLevel('warn')
+    res.sendStatus(403)
   } else {
     req.logger.setLevel('error')
     res.sendStatus(500)

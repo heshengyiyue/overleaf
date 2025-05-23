@@ -51,6 +51,7 @@ export class FrameWidget extends WidgetType {
         if (!this.destroyed) {
           await MathJax.typesetPromise([element])
           view.requestMeasure()
+          MathJax.typesetClear([element])
         }
       })
       .catch(() => {
@@ -73,5 +74,9 @@ export class FrameWidget extends WidgetType {
 
   ignoreEvent(event: Event) {
     return event.type !== 'mouseup'
+  }
+
+  coordsAt(element: HTMLElement) {
+    return element.getBoundingClientRect()
   }
 }

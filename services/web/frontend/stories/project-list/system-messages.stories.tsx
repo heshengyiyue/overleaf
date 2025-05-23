@@ -1,9 +1,9 @@
 import SystemMessages from '@/shared/components/system-messages'
 import useFetchMock from '../hooks/use-fetch-mock'
-import { FetchMockStatic } from 'fetch-mock'
+import { type FetchMock } from 'fetch-mock'
 
 export const SystemMessage = (args: any) => {
-  useFetchMock((fetchMock: FetchMockStatic) => {
+  useFetchMock((fetchMock: FetchMock) => {
     fetchMock.get(/\/system\/messages/, [
       {
         _id: 1,
@@ -18,17 +18,15 @@ export const SystemMessage = (args: any) => {
       },
     ])
   })
-  window.metaAttributesCache = new Map()
 
   return <SystemMessages {...args} />
 }
 
 export const TranslationMessage = (args: any) => {
-  useFetchMock((fetchMock: FetchMockStatic) => {
+  useFetchMock((fetchMock: FetchMock) => {
     fetchMock.get(/\/system\/messages/, [])
   })
 
-  window.metaAttributesCache = new Map()
   window.metaAttributesCache.set('ol-suggestedLanguage', {
     url: '/dev/null',
     lngName: 'German',

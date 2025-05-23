@@ -2,9 +2,12 @@ const OError = require('@overleaf/o-error')
 const { UserAuditLogEntry } = require('../../models/UserAuditLogEntry')
 const { callbackify } = require('util')
 
-function _canHaveNoIpAddressId(operation) {
+function _canHaveNoIpAddressId(operation, info) {
   if (operation === 'join-group-subscription') return true
   if (operation === 'leave-group-subscription') return true
+  if (operation === 'must-reset-password-set') return true
+  if (operation === 'remove-email' && info.script) return true
+  if (operation === 'release-managed-user' && info.script) return true
   return false
 }
 
@@ -17,6 +20,10 @@ function _canHaveNoInitiatorId(operation, info) {
   if (operation === 'remove-email' && info.script) return true
   if (operation === 'join-group-subscription') return true
   if (operation === 'leave-group-subscription') return true
+  if (operation === 'must-reset-password-set') return true
+  if (operation === 'must-reset-password-unset') return true
+  if (operation === 'account-suspension' && info.script) return true
+  if (operation === 'release-managed-user' && info.script) return true
 }
 
 /**

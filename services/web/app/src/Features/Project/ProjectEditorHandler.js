@@ -1,28 +1,18 @@
 let ProjectEditorHandler
 const _ = require('lodash')
 const Path = require('path')
-
-function mergeDeletedDocs(a, b) {
-  const docIdsInA = new Set(a.map(doc => doc._id.toString()))
-  return a.concat(b.filter(doc => !docIdsInA.has(doc._id.toString())))
-}
+const Features = require('../../infrastructure/Features')
 
 module.exports = ProjectEditorHandler = {
   trackChangesAvailable: false,
 
-  buildProjectModelView(project, members, invites, deletedDocsFromDocstore) {
+  buildProjectModelView(project, members, invites) {
     let owner, ownerFeatures
-    if (!Array.isArray(project.deletedDocs)) {
-      project.deletedDocs = []
-    }
-    project.deletedDocs.forEach(doc => {
-      // The frontend does not use this field.
-      delete doc.deletedAt
-    })
     const result = {
       _id: project._id,
       name: project.name,
       rootDoc_id: project.rootDoc_id,
+      mainBibliographyDoc_id: project.mainBibliographyDoc_id,
       rootFolder: [this.buildFolderModelView(project.rootFolder[0])],
       publicAccesLevel: project.publicAccesLevel,
       dropboxEnabled: !!project.existsInDropbox,
@@ -30,10 +20,6 @@ module.exports = ProjectEditorHandler = {
       description: project.description,
       spellCheckLanguage: project.spellCheckLanguage,
       deletedByExternalDataSource: project.deletedByExternalDataSource || false,
-      deletedDocs: mergeDeletedDocs(
-        project.deletedDocs,
-        deletedDocsFromDocstore
-      ),
       members: [],
       invites: this.buildInvitesView(invites),
       imageName:
@@ -83,11 +69,9 @@ module.exports = ProjectEditorHandler = {
     for (const member of members || []) {
       if (member.privilegeLevel === 'owner') {
         ownerFeatures = member.user.features
-        owner = this.buildUserModelView(member.user, 'owner')
+        owner = this.buildUserModelView(member)
       } else {
-        filteredMembers.push(
-          this.buildUserModelView(member.user, member.privilegeLevel)
-        )
+        filteredMembers.push(this.buildUserModelView(member))
       }
     }
     return {
@@ -97,14 +81,17 @@ module.exports = ProjectEditorHandler = {
     }
   },
 
-  buildUserModelView(user, privileges) {
+  buildUserModelView(member) {
+    const user = member.user
     return {
       _id: user._id,
       first_name: user.first_name,
       last_name: user.last_name,
       email: user.email,
-      privileges,
+      privileges: member.privilegeLevel,
       signUpDate: user.signUpDate,
+      pendingEditor: member.pendingEditor,
+      pendingReviewer: member.pendingReviewer,
     }
   },
 
@@ -122,11 +109,18 @@ module.exports = ProjectEditorHandler = {
   },
 
   buildFileModelView(file) {
+    const additionalFileProperties = {}
+
+    if (Features.hasFeature('project-history-blobs')) {
+      additionalFileProperties.hash = file.hash
+    }
+
     return {
       _id: file._id,
       name: file.name,
       linkedFileData: file.linkedFileData,
       created: file.created,
+      ...additionalFileProperties,
     }
   },
 
@@ -141,16 +135,6 @@ module.exports = ProjectEditorHandler = {
     if (invites == null) {
       return []
     }
-    return invites.map(invite =>
-      _.pick(invite, [
-        '_id',
-        'createdAt',
-        'email',
-        'expires',
-        'privileges',
-        'projectId',
-        'sendingUserId',
-      ])
-    )
+    return invites.map(invite => _.pick(invite, ['_id', 'email', 'privileges']))
   },
 }

@@ -8,12 +8,9 @@ const CommentList = require('./comment_list')
 const TrackedChangeList = require('./tracked_change_list')
 
 /**
- * @typedef {import("../types").StringFileRawData} StringFileRawData
- * @typedef {import("../operation/edit_operation")} EditOperation
- * @typedef {import("../types").BlobStore} BlobStore
- * @typedef {import("../types").CommentRawData} CommentRawData
- * @typedef {import("../types").TrackedChangeRawData} TrackedChangeRawData
- * @typedef {import('../types').RangesBlob} RangesBlob
+ * @import { StringFileRawData, RawFileData, BlobStore, CommentRawData } from "../types"
+ * @import { TrackedChangeRawData, RangesBlob } from "../types"
+ * @import EditOperation from "../operation/edit_operation"
  */
 
 class StringFileData extends FileData {
@@ -47,6 +44,7 @@ class StringFileData extends FileData {
    * @returns {StringFileRawData}
    */
   toRaw() {
+    /** @type StringFileRawData */
     const raw = { content: this.content }
 
     if (this.comments.length) {
@@ -88,6 +86,14 @@ class StringFileData extends FileData {
       content += this.content.slice(cursor)
     }
     return content
+  }
+
+  /**
+   * Return docstore view of a doc: each line separated
+   * @return {string[]}
+   */
+  getLines() {
+    return this.getContent({ filterTrackedDeletes: true }).split('\n')
   }
 
   /** @inheritdoc */
@@ -133,6 +139,7 @@ class StringFileData extends FileData {
   /**
    * @inheritdoc
    * @param {BlobStore} blobStore
+   * @return {Promise<RawFileData>}
    */
   async store(blobStore) {
     const blob = await blobStore.putString(this.content)

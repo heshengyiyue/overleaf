@@ -1,4 +1,5 @@
 export type ConnectionError =
+  | 'io-not-loaded'
   | 'maintenance'
   | 'not-logged-in'
   | 'out-of-sync'
@@ -7,7 +8,6 @@ export type ConnectionError =
   | 'rate-limited'
   | 'unable-to-connect'
   | 'unable-to-join'
-  | 'io-not-loaded'
 
 export type ConnectionState = {
   readyState: WebSocket['CONNECTING'] | WebSocket['OPEN'] | WebSocket['CLOSED']
@@ -17,4 +17,19 @@ export type ConnectionState = {
   forcedDisconnectDelay: number
   lastConnectionAttempt: number
   error: '' | ConnectionError
+}
+
+export type ExternalHeartbeat = {
+  currentStart: number
+  lastSuccess: number
+  lastLatency: number
+}
+
+export type SocketDebuggingInfo = {
+  client_id?: string
+  publicId?: string
+  transport?: string
+  lastUserActivity: number
+  connectionState: ConnectionState
+  externalHeartbeat: ExternalHeartbeat
 }

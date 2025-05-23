@@ -10,17 +10,26 @@ const {
 } = require('celebrate')
 const YAML = require('js-yaml')
 
+const DATA_DIR = Path.join(
+  __dirname,
+  'data',
+  // Give each shard their own data dir.
+  process.env.CYPRESS_SHARD || 'default'
+)
 const PATHS = {
-  DOCKER_COMPOSE_OVERRIDE: 'docker-compose.override.yml',
-  DATA_DIR: Path.join(__dirname, 'data'),
-  SANDBOXED_COMPILES_HOST_DIR: Path.join(__dirname, 'data/compiles'),
+  DOCKER_COMPOSE_FILE: 'docker-compose.yml',
+  // Give each shard their own override file.
+  DOCKER_COMPOSE_OVERRIDE: `docker-compose.${process.env.CYPRESS_SHARD || 'override'}.yml`,
+  DOCKER_COMPOSE_NATIVE: 'docker-compose.native.yml',
+  DATA_DIR,
+  SANDBOXED_COMPILES_HOST_DIR: Path.join(DATA_DIR, 'compiles'),
 }
 const IMAGES = {
   CE: process.env.IMAGE_TAG_CE.replace(/:.+/, ''),
   PRO: process.env.IMAGE_TAG_PRO.replace(/:.+/, ''),
 }
 
-let mongoIsInitialized = false
+let previousConfig = ''
 
 function readDockerComposeOverride() {
   try {
@@ -44,6 +53,17 @@ function writeDockerComposeOverride(cfg) {
   fs.writeFileSync(PATHS.DOCKER_COMPOSE_OVERRIDE, YAML.dump(cfg))
 }
 
+function runDockerCompose(command, args, callback) {
+  const files = ['-f', PATHS.DOCKER_COMPOSE_FILE]
+  if (process.env.NATIVE_CYPRESS) {
+    files.push('-f', PATHS.DOCKER_COMPOSE_NATIVE)
+  }
+  if (fs.existsSync(PATHS.DOCKER_COMPOSE_OVERRIDE)) {
+    files.push('-f', PATHS.DOCKER_COMPOSE_OVERRIDE)
+  }
+  execFile('docker', ['compose', ...files, command, ...args], callback)
+}
+
 function purgeDataDir() {
   fs.rmSync(PATHS.DATA_DIR, { recursive: true, force: true })
 }
@@ -58,7 +78,9 @@ app.use((req, res, next) => {
   // Basic access logs
   console.log(req.method, req.url, req.body)
   // Add CORS headers
-  res.setHeader('Access-Control-Allow-Origin', 'http://sharelatex')
+  const accessControlAllowOrigin =
+    process.env.ACCESS_CONTROL_ALLOW_ORIGIN || 'http://sharelatex'
+  res.setHeader('Access-Control-Allow-Origin', accessControlAllowOrigin)
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   res.setHeader('Access-Control-Max-Age', '3600')
   next()
@@ -79,11 +101,9 @@ app.post(
   (req, res) => {
     const { cwd, script, args } = req.body
 
-    execFile(
-      'docker',
+    runDockerCompose(
+      'exec',
       [
-        'compose',
-        'exec',
         'sharelatex',
         'bash',
         '-c',
@@ -111,15 +131,33 @@ const allowedVars = Joi.object(
       'GIT_BRIDGE_HOST',
       'GIT_BRIDGE_PORT',
       'V1_HISTORY_URL',
-      'DOCKER_RUNNER',
       'SANDBOXED_COMPILES',
-      'SANDBOXED_COMPILES_SIBLING_CONTAINERS',
       'ALL_TEX_LIVE_DOCKER_IMAGE_NAMES',
       'OVERLEAF_TEMPLATES_USER_ID',
       'OVERLEAF_NEW_PROJECT_TEMPLATE_LINKS',
       'OVERLEAF_ALLOW_PUBLIC_ACCESS',
       'OVERLEAF_ALLOW_ANONYMOUS_READ_AND_WRITE_SHARING',
+      'EXTERNAL_AUTH',
+      'OVERLEAF_SAML_ENTRYPOINT',
+      'OVERLEAF_SAML_CALLBACK_URL',
+      'OVERLEAF_SAML_ISSUER',
+      'OVERLEAF_SAML_IDENTITY_SERVICE_NAME',
+      'OVERLEAF_SAML_EMAIL_FIELD',
+      'OVERLEAF_SAML_FIRST_NAME_FIELD',
+      'OVERLEAF_SAML_LAST_NAME_FIELD',
+      'OVERLEAF_SAML_UPDATE_USER_DETAILS_ON_LOGIN',
+      'OVERLEAF_SAML_CERT',
+      'OVERLEAF_LDAP_URL',
+      'OVERLEAF_LDAP_SEARCH_BASE',
+      'OVERLEAF_LDAP_SEARCH_FILTER',
+      'OVERLEAF_LDAP_BIND_DN',
+      'OVERLEAF_LDAP_BIND_CREDENTIALS',
+      'OVERLEAF_LDAP_EMAIL_ATT',
+      'OVERLEAF_LDAP_NAME_ATT',
+      'OVERLEAF_LDAP_LAST_NAME_ATT',
+      'OVERLEAF_LDAP_UPDATE_USER_DETAILS_ON_LOGIN',
       // Old branding, used for upgrade tests
+      'SHARELATEX_SITE_URL',
       'SHARELATEX_MONGO_URL',
       'SHARELATEX_REDIS_HOST',
     ].map(name => [name, Joi.string()])
@@ -140,6 +178,10 @@ function setVarsDockerCompose({ pro, vars, version, withDataDir }) {
     cfg.services.sharelatex.depends_on = []
   }
 
+  if (['ldap', 'saml'].includes(vars.EXTERNAL_AUTH)) {
+    cfg.services.sharelatex.depends_on.push(vars.EXTERNAL_AUTH)
+  }
+
   const dataDirInContainer =
     version === 'latest' || version >= '5.0'
       ? '/var/lib/overleaf/data'
@@ -152,10 +194,7 @@ function setVarsDockerCompose({ pro, vars, version, withDataDir }) {
     )
   }
 
-  if (
-    cfg.services.sharelatex.environment
-      .SANDBOXED_COMPILES_SIBLING_CONTAINERS === 'true'
-  ) {
+  if (cfg.services.sharelatex.environment.SANDBOXED_COMPILES === 'true') {
     cfg.services.sharelatex.environment.SANDBOXED_COMPILES_HOST_DIR =
       PATHS.SANDBOXED_COMPILES_HOST_DIR
     cfg.services.sharelatex.environment.TEX_LIVE_DOCKER_IMAGE =
@@ -184,8 +223,7 @@ app.post(
           '--detach',
           '--wait',
           '--volumes',
-          '--timeout',
-          '0',
+          '--timeout=60',
           'sharelatex',
           'git-bridge',
           'mongo',
@@ -201,48 +239,31 @@ app.post(
   (req, res) => {
     const { cmd } = req.params
     const { args } = req.body
-    if (['stop', 'down'].includes(cmd)) {
-      mongoIsInitialized = false
-    }
-    execFile('docker', ['compose', cmd, ...args], (error, stdout, stderr) => {
+    runDockerCompose(cmd, args, (error, stdout, stderr) => {
       res.json({ error, stdout, stderr })
     })
   }
 )
 
-function mongoInit(callback) {
-  execFile(
-    'docker',
-    ['compose', 'up', '--detach', '--wait', 'mongo'],
+function maybeResetData(resetData, callback) {
+  if (!resetData) return callback()
+
+  previousConfig = ''
+  runDockerCompose(
+    'down',
+    ['--timeout=0', '--volumes', 'mongo', 'redis', 'sharelatex'],
     (error, stdout, stderr) => {
       if (error) return callback(error, stdout, stderr)
 
-      execFile(
-        'docker',
-        [
-          'compose',
-          'exec',
-          'mongo',
-          'mongo',
-          '--eval',
-          'rs.initiate({ _id: "overleaf", members: [ { _id: 0, host: "mongo:27017" } ] })',
-        ],
-        (error, stdout, stderr) => {
-          if (!error) {
-            mongoIsInitialized = true
-          }
-          callback(error, stdout, stderr)
-        }
-      )
+      try {
+        purgeDataDir()
+      } catch (error) {
+        return callback(error)
+      }
+      callback()
     }
   )
 }
-
-app.post('/mongo/init', (req, res) => {
-  mongoInit((error, stdout, stderr) => {
-    res.json({ error, stdout, stderr })
-  })
-})
 
 app.post(
   '/reconfigure',
@@ -253,54 +274,47 @@ app.post(
         version: Joi.string().required(),
         vars: allowedVars,
         withDataDir: Joi.boolean().optional(),
+        resetData: Joi.boolean().optional(),
       },
     },
     { allowUnknown: false }
   ),
   (req, res) => {
-    const { pro, version, vars, withDataDir } = req.body
-    try {
-      setVarsDockerCompose({ pro, version, vars, withDataDir })
-    } catch (error) {
-      return res.json({ error })
-    }
-
-    const doMongoInit = mongoIsInitialized ? cb => cb() : mongoInit
-    doMongoInit((error, stdout, stderr) => {
+    const { pro, version, vars, withDataDir, resetData } = req.body
+    maybeResetData(resetData, (error, stdout, stderr) => {
       if (error) return res.json({ error, stdout, stderr })
 
-      execFile(
-        'docker',
-        ['compose', 'up', '--detach', '--wait', 'sharelatex'],
+      const previousConfigServer = previousConfig
+      const newConfig = JSON.stringify(req.body)
+      if (previousConfig === newConfig) {
+        return res.json({ previousConfigServer })
+      }
+
+      try {
+        setVarsDockerCompose({ pro, version, vars, withDataDir })
+      } catch (error) {
+        return res.json({ error })
+      }
+
+      if (error) return res.json({ error, stdout, stderr })
+      runDockerCompose(
+        'up',
+        ['--detach', '--wait', 'sharelatex'],
         (error, stdout, stderr) => {
-          res.json({ error, stdout, stderr })
+          previousConfig = newConfig
+          res.json({ error, stdout, stderr, previousConfigServer })
         }
       )
     })
   }
 )
 
-app.post('/reset/data', (req, res) => {
-  execFile(
-    'docker',
-    ['compose', 'stop', '--timeout=0', 'sharelatex'],
+app.get('/redis/keys', (req, res) => {
+  runDockerCompose(
+    'exec',
+    ['redis', 'redis-cli', 'KEYS', '*'],
     (error, stdout, stderr) => {
-      if (error) return res.json({ error, stdout, stderr })
-
-      try {
-        purgeDataDir()
-      } catch (error) {
-        return res.json({ error })
-      }
-
-      mongoIsInitialized = false
-      execFile(
-        'docker',
-        ['compose', 'down', '--timeout=0', '--volumes', 'mongo', 'redis'],
-        (error, stdout, stderr) => {
-          res.json({ error, stdout, stderr })
-        }
-      )
+      res.json({ error, stdout, stderr })
     }
   )
 })
@@ -309,12 +323,4 @@ app.use(handleValidationErrors())
 
 purgeDataDir()
 
-// Init on startup
-mongoInit(err => {
-  if (err) {
-    console.error('mongo init failed', err)
-    process.exit(1)
-  }
-
-  app.listen(80)
-})
+app.listen(80)

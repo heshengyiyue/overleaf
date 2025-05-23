@@ -1,8 +1,9 @@
 import { SubscriptionPricingState } from '@recurly/recurly-js'
 import { PriceForDisplayData } from '../../../../../types/subscription/plan'
-import { currencies, CurrencyCode } from '../data/currency'
+import { CurrencyCode } from '../../../../../types/subscription/currency'
 import { getRecurlyGroupPlanCode } from './recurly-group-plan-code'
 import { debugConsole } from '@/utils/debugging'
+import { formatCurrency } from '@/shared/utils/currency'
 
 function queryRecurlyPlanPrice(planCode: string, currency: CurrencyCode) {
   return new Promise(resolve => {
@@ -20,31 +21,11 @@ function queryRecurlyPlanPrice(planCode: string, currency: CurrencyCode) {
   })
 }
 
-type FormatCurrency = (
-  price: number,
-  currency: CurrencyCode,
-  locale: string,
-  stripIfInteger?: boolean
-) => string
-
-export const formatCurrencyDefault: FormatCurrency = (
-  price: number,
-  currency: CurrencyCode,
-  _locale: string,
-  stripIfInteger = false
-) => {
-  const currencySymbol = currencies[currency]
-  const number =
-    stripIfInteger && price % 1 === 0 ? Number(price) : price.toFixed(2)
-  return `${currencySymbol}${number}`
-}
-
 export function formatPriceForDisplayData(
   price: string,
   taxRate: number,
   currencyCode: CurrencyCode,
-  locale: string,
-  formatCurrency: FormatCurrency
+  locale: string
 ): PriceForDisplayData {
   const totalPriceExTax = parseFloat(price)
   let taxAmount = totalPriceExTax * taxRate
@@ -66,8 +47,7 @@ function getPerUserDisplayPrice(
   totalPrice: number,
   currency: CurrencyCode,
   size: string,
-  locale: string,
-  formatCurrency: FormatCurrency
+  locale: string
 ): string {
   return formatCurrency(totalPrice / parseInt(size), currency, locale, true)
 }
@@ -76,8 +56,7 @@ export async function loadDisplayPriceWithTaxPromise(
   planCode: string,
   currencyCode: CurrencyCode,
   taxRate: number,
-  locale: string,
-  formatCurrency: FormatCurrency
+  locale: string
 ) {
   if (!recurly) return
 
@@ -90,8 +69,7 @@ export async function loadDisplayPriceWithTaxPromise(
       price.next.total,
       taxRate,
       currencyCode,
-      locale,
-      formatCurrency
+      locale
     )
 }
 
@@ -101,8 +79,7 @@ export async function loadGroupDisplayPriceWithTaxPromise(
   taxRate: number,
   size: string,
   usage: string,
-  locale: string,
-  formatCurrency: FormatCurrency
+  locale: string
 ) {
   if (!recurly) return
 
@@ -111,8 +88,7 @@ export async function loadGroupDisplayPriceWithTaxPromise(
     planCode,
     currencyCode,
     taxRate,
-    locale,
-    formatCurrency
+    locale
   )
 
   if (price) {
@@ -120,8 +96,7 @@ export async function loadGroupDisplayPriceWithTaxPromise(
       price.totalAsNumber,
       currencyCode,
       size,
-      locale,
-      formatCurrency
+      locale
     )
   }
 

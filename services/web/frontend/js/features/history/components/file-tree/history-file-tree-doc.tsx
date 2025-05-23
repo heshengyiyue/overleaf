@@ -2,8 +2,8 @@ import { memo } from 'react'
 import classNames from 'classnames'
 import HistoryFileTreeItem from './history-file-tree-item'
 import iconTypeFromName from '../../../file-tree/util/icon-type-from-name'
-import Icon from '../../../../shared/components/icon'
 import type { FileDiff } from '../../services/types/file'
+import MaterialIcon from '@/shared/components/material-icon'
 
 type HistoryFileTreeDocProps = {
   file: FileDiff
@@ -34,10 +34,9 @@ function HistoryFileTreeDoc({
         name={name}
         operation={'operation' in file ? file.operation : undefined}
         icons={
-          <Icon
+          <MaterialIcon
             type={iconTypeFromName(name)}
-            fw
-            className="spaced file-tree-icon"
+            className="file-tree-icon"
           />
         }
       />

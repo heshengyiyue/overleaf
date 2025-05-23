@@ -1,9 +1,9 @@
-const Path = require('path')
-const { promisify } = require('util')
+const Path = require('node:path')
+const { promisify } = require('node:util')
 const Settings = require('@overleaf/settings')
 const logger = require('@overleaf/logger')
 const CommandRunner = require('./CommandRunner')
-const fs = require('fs')
+const fs = require('node:fs')
 
 const ProcessTable = {} // table of currently running jobs (pids or docker container names)
 
@@ -110,11 +110,14 @@ function _writeLogOutput(projectId, directory, output, callback) {
   // internal method for writing non-empty log files
   function _writeFile(file, content, cb) {
     if (content && content.length > 0) {
-      fs.writeFile(file, content, err => {
-        if (err) {
-          logger.error({ err, projectId, file }, 'error writing log file') // don't fail on error
-        }
-        cb()
+      fs.unlink(file, () => {
+        fs.writeFile(file, content, { flag: 'wx' }, err => {
+          if (err) {
+            // don't fail on error
+            logger.error({ err, projectId, file }, 'error writing log file')
+          }
+          cb()
+        })
       })
     } else {
       cb()

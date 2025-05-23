@@ -1,14 +1,20 @@
 import { parser } from '../../frontend/js/features/source-editor/lezer-latex/latex.mjs'
 
-import * as fs from 'fs'
-import * as path from 'path'
-import { fileURLToPath } from 'url'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { TreeFragment } from '@lezer/common'
 import minimist from 'minimist'
+import { seed, random } from './random.mjs'
 
 const argv = minimist(process.argv.slice(2))
 const NUMBER_OF_OPS = argv.ops || 1000
 const CSV_OUTPUT = argv.csv || false
+const SEED = argv.seed
+
+if (SEED) {
+  seed(SEED)
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -108,13 +114,13 @@ function writeTextAt(document, position, text) {
 
 function randomInsertions(document, num) {
   return timedChanges(document, num, currentDoc =>
-    insertAt(currentDoc, Math.floor(Math.random() * currentDoc.length), 'a')
+    insertAt(currentDoc, Math.floor(random() * currentDoc.length), 'a')
   )
 }
 
 function randomDeletions(document, num) {
   return timedChanges(document, num, currentDoc =>
-    deleteAt(currentDoc, Math.floor(Math.random() * currentDoc.length), 1)
+    deleteAt(currentDoc, Math.floor(random() * currentDoc.length), 1)
   )
 }
 

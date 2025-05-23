@@ -1,7 +1,7 @@
 const { Project } = require('../../models/Project')
 const PublicAccessLevels = require('../Authorization/PublicAccessLevels')
 const PrivilegeLevels = require('../Authorization/PrivilegeLevels')
-const { ObjectId } = require('mongodb')
+const { ObjectId } = require('mongodb-legacy')
 const Metrics = require('@overleaf/metrics')
 const Settings = require('@overleaf/settings')
 const logger = require('@overleaf/logger')
@@ -151,11 +151,15 @@ const TokenAccessHandler = {
     throw new Error('invalid token type')
   },
 
-  async addReadOnlyUserToProject(userId, projectId) {
+  async addReadOnlyUserToProject(userId, projectId, ownerId) {
     userId = new ObjectId(userId.toString())
     projectId = new ObjectId(projectId.toString())
     Analytics.recordEventForUserInBackground(userId, 'project-joined', {
-      mode: 'read-only',
+      role: PrivilegeLevels.READ_ONLY,
+      projectId: projectId.toString(),
+      source: 'link-sharing',
+      ownerId: ownerId.toString(),
+      mode: 'view',
     })
 
     return await Project.updateOne(
@@ -168,19 +172,31 @@ const TokenAccessHandler = {
     ).exec()
   },
 
-  async addReadAndWriteUserToProject(userId, projectId) {
+  async removeReadAndWriteUserFromProject(userId, projectId) {
     userId = new ObjectId(userId.toString())
     projectId = new ObjectId(projectId.toString())
-    Analytics.recordEventForUserInBackground(userId, 'project-joined', {
-      mode: 'read-write',
-    })
 
     return await Project.updateOne(
       {
         _id: projectId,
       },
       {
-        $addToSet: { tokenAccessReadAndWrite_refs: userId },
+        $pull: { tokenAccessReadAndWrite_refs: userId },
+      }
+    ).exec()
+  },
+
+  async moveReadAndWriteUserToReadOnly(userId, projectId) {
+    userId = new ObjectId(userId.toString())
+    projectId = new ObjectId(projectId.toString())
+
+    return await Project.updateOne(
+      {
+        _id: projectId,
+      },
+      {
+        $pull: { tokenAccessReadAndWrite_refs: userId },
+        $addToSet: { tokenAccessReadOnly_refs: userId },
       }
     ).exec()
   },

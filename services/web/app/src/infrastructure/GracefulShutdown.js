@@ -65,20 +65,22 @@ async function gracefulShutdown(server, signal) {
     true
   )
 
-  await sleep(Settings.gracefulShutdownDelayInMs)
-  try {
-    await new Promise((resolve, reject) => {
-      logger.warn({}, 'graceful shutdown: closing http server')
-      server.close(err => {
-        if (err) {
-          reject(OError.tag(err, 'http.Server.close failed'))
-        } else {
-          resolve()
-        }
+  if (server) {
+    await sleep(Settings.gracefulShutdownDelayInMs)
+    try {
+      await new Promise((resolve, reject) => {
+        logger.warn({}, 'graceful shutdown: closing http server')
+        server.close(err => {
+          if (err) {
+            reject(OError.tag(err, 'http.Server.close failed'))
+          } else {
+            resolve()
+          }
+        })
       })
-    })
-  } catch (err) {
-    throw OError.tag(err, 'stop traffic')
+    } catch (err) {
+      throw OError.tag(err, 'stop traffic')
+    }
   }
 
   await runHandlers(
@@ -93,10 +95,6 @@ async function gracefulShutdown(server, signal) {
       'optionalAfterDrainingConnections',
       optionalCleanupHandlersAfterDrainingConnections.concat([
         { label: 'metrics module', handler: () => Metrics.close() },
-        {
-          label: 'logger module',
-          handler: () => logger.logLevelChecker?.stop(),
-        },
       ])
     )
   } catch (err) {

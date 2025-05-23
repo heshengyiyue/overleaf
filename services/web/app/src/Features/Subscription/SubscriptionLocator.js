@@ -2,6 +2,10 @@ const { callbackifyAll } = require('@overleaf/promise-utils')
 const { Subscription } = require('../../models/Subscription')
 const { DeletedSubscription } = require('../../models/DeletedSubscription')
 const logger = require('@overleaf/logger')
+const {
+  AI_ADD_ON_CODE,
+  isStandaloneAiAddOnPlanCode,
+} = require('./PaymentProviderEntities')
 require('./GroupPlansData') // make sure dynamic group plans are loaded
 
 const SubscriptionLocator = {
@@ -31,10 +35,12 @@ const SubscriptionLocator = {
       .exec()
   },
 
-  async getMemberSubscriptions(userOrId) {
+  async getMemberSubscriptions(userOrId, populate = []) {
     const userId = SubscriptionLocator._getUserId(userOrId)
+    // eslint-disable-next-line no-restricted-syntax
     return await Subscription.find({ member_ids: userId })
       .populate('admin_id', 'email')
+      .populate(populate)
       .exec()
   },
 
@@ -110,6 +116,17 @@ const SubscriptionLocator = {
     return await DeletedSubscription.findOne({
       'subscription._id': subscriptionId,
     }).exec()
+  },
+
+  async hasAiAssist(userOrId) {
+    const userId = SubscriptionLocator._getUserId(userOrId)
+    const subscription = await Subscription.findOne({ admin_id: userId }).exec()
+    // todo: as opposed to recurlyEntities which use addon.code, subscription model uses addon.addOnCode
+    //  which we hope to align via https://github.com/overleaf/internal/issues/25494
+    return Boolean(
+      isStandaloneAiAddOnPlanCode(subscription?.planCode) ||
+        subscription?.addOns?.some(addOn => addOn.addOnCode === AI_ADD_ON_CODE)
+    )
   },
 
   _getUserId(userOrId) {

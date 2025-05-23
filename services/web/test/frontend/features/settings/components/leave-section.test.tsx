@@ -6,17 +6,13 @@ import {
 } from '@testing-library/react'
 
 import LeaveSection from '../../../../../frontend/js/features/settings/components/leave-section'
+import getMeta from '@/utils/meta'
 
 describe('<LeaveSection />', function () {
   beforeEach(function () {
-    window.metaAttributesCache = new Map()
     window.metaAttributesCache.set('ol-usersEmail', 'foo@bar.com')
-    window.metaAttributesCache.set('ol-ExposedSettings', { isOverleaf: true })
+    Object.assign(getMeta('ol-ExposedSettings'), { isOverleaf: true })
     window.metaAttributesCache.set('ol-hasPassword', true)
-  })
-
-  afterEach(function () {
-    window.metaAttributesCache = new Map()
   })
 
   it('opens modal', async function () {
@@ -27,7 +23,7 @@ describe('<LeaveSection />', function () {
     })
 
     fireEvent.click(button)
-    await screen.findByText('Delete Account')
+    await screen.findByText('Delete account')
   })
 
   it('closes modal', async function () {
@@ -44,6 +40,6 @@ describe('<LeaveSection />', function () {
 
     fireEvent.click(cancelButton)
 
-    await waitForElementToBeRemoved(() => screen.getByText('Delete Account'))
+    await waitForElementToBeRemoved(() => screen.getByText('Delete account'))
   })
 })

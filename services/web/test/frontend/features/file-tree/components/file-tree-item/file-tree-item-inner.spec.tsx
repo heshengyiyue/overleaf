@@ -115,7 +115,7 @@ describe('<FileTreeitemInner />', function () {
         </EditorProviders>
       )
 
-      cy.findByRole('button', { name: 'Menu' }).click()
+      cy.findByRole('button', { name: 'Open bar.tex action menu' }).click()
       cy.findByRole('menuitem', { name: 'Rename' }).click()
       cy.findByRole('button', { name: 'bar.tex' }).should('not.exist')
       cy.findByRole('textbox')

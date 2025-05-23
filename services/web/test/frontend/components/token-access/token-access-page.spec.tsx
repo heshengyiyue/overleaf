@@ -7,10 +7,8 @@ describe('<TokenAccessPage/>', function () {
 
   beforeEach(function () {
     cy.window().then(win => {
-      win.metaAttributesCache = new Map<string, any>([
-        ['ol-postUrl', url],
-        ['ol-user', { email: 'test@example.com' }],
-      ])
+      win.metaAttributesCache.set('ol-postUrl', url)
+      win.metaAttributesCache.set('ol-user', { email: 'test@example.com' })
     })
   })
 
@@ -30,12 +28,10 @@ describe('<TokenAccessPage/>', function () {
       expect(interception.request.body.confirmedByUser).to.be.false
     })
 
-    cy.get('h1').should(
+    cy.get('.link-sharing-invite-header').should(
       'have.text',
-      ['You have been invited to join', 'Test Project'].join('')
+      ['You’re joining', 'Test Project', 'as test@example.com'].join('')
     )
-
-    cy.contains('You are accepting this invite as test@example.com')
 
     cy.intercept(
       { method: 'post', url, times: 1 },
@@ -48,7 +44,7 @@ describe('<TokenAccessPage/>', function () {
 
     cy.stub(location, 'replace').as('replaceLocation')
 
-    cy.findByRole('button', { name: 'Join Project' }).click()
+    cy.findByRole('button', { name: 'OK, join project' }).click()
 
     cy.wait('@confirmedGrantRequest').then(interception => {
       expect(interception.request.body.confirmedByUser).to.be.true

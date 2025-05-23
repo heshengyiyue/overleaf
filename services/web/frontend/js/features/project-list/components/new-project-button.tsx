@@ -1,9 +1,6 @@
 import { type JSXElementConstructor, useCallback, useState } from 'react'
-import { Dropdown, MenuItem } from 'react-bootstrap'
+import classnames from 'classnames'
 import { useTranslation } from 'react-i18next'
-import { ExposedSettings } from '../../../../../types/exposed-settings'
-import type { PortalTemplate } from '../../../../../types/portal-template'
-import ControlledDropdown from '../../../shared/components/controlled-dropdown'
 import getMeta from '../../../utils/meta'
 import NewProjectButtonModal, {
   NewProjectButtonModalVariant,
@@ -12,6 +9,16 @@ import AddAffiliation, { useAddAffiliation } from './add-affiliation'
 import { Nullable } from '../../../../../types/utils'
 import { sendMB } from '../../../infrastructure/event-tracking'
 import importOverleafModules from '../../../../macros/import-overleaf-module.macro'
+import {
+  Dropdown,
+  DropdownDivider,
+  DropdownHeader,
+  DropdownItem,
+  DropdownMenu,
+  DropdownToggle,
+} from '@/features/ui/components/bootstrap-5/dropdown-menu'
+import { useSendProjectListMB } from '@/features/project-list/components/project-list-events'
+import type { PortalTemplate } from '../../../../../types/portal-template'
 
 type SendTrackingEvent = {
   dropdownMenu: string
@@ -32,7 +39,6 @@ type NewProjectButtonProps = {
   id: string
   buttonText?: string
   className?: string
-  menuClassName?: string
   trackingKey?: string
   showAddAffiliationWidget?: boolean
 }
@@ -41,17 +47,16 @@ function NewProjectButton({
   id,
   buttonText,
   className,
-  menuClassName,
   trackingKey,
   showAddAffiliationWidget,
 }: NewProjectButtonProps) {
   const { t } = useTranslation()
-  const { templateLinks } = getMeta('ol-ExposedSettings') as ExposedSettings
+  const { templateLinks } = getMeta('ol-ExposedSettings')
   const [modal, setModal] =
     useState<Nullable<NewProjectButtonModalVariant>>(null)
-  const portalTemplates = getMeta('ol-portalTemplates') as PortalTemplate[]
+  const portalTemplates = getMeta('ol-portalTemplates') || []
   const { show: enableAddAffiliationWidget } = useAddAffiliation()
-
+  const sendProjectListMB = useSendProjectListMB()
   const sendTrackingEvent = useCallback(
     ({
       dropdownMenu,
@@ -90,7 +95,7 @@ function NewProjectButton({
 
   const handleModalMenuClick = useCallback(
     (
-      e: React.MouseEvent<Record<string, unknown>>,
+      e: React.MouseEvent,
       { modalVariant, dropdownMenuEvent }: ModalMenuClickOptions
     ) => {
       // avoid invoking the "onClick" callback on the main dropdown button
@@ -100,43 +105,46 @@ function NewProjectButton({
         dropdownMenu: dropdownMenuEvent,
         dropdownOpen: true,
       })
+      sendProjectListMB('new-project-click', { item: dropdownMenuEvent })
 
       setModal(modalVariant)
     },
-    [sendTrackingEvent]
+    [sendProjectListMB, sendTrackingEvent]
   )
 
   const handlePortalTemplateClick = useCallback(
-    (
-      e: React.MouseEvent<Record<string, unknown>>,
-      institutionTemplateName: string
-    ) => {
+    (e: React.MouseEvent, template: PortalTemplate) => {
       // avoid invoking the "onClick" callback on the main dropdown button
       e.stopPropagation()
 
       sendTrackingEvent({
         dropdownMenu: 'institution-template',
         dropdownOpen: true,
-        institutionTemplateName,
+        institutionTemplateName: template.name,
+      })
+      sendProjectListMB('new-project-click', {
+        item: template.name,
+        destinationURL: template.url,
       })
     },
-    [sendTrackingEvent]
+    [sendProjectListMB, sendTrackingEvent]
   )
 
   const handleStaticTemplateClick = useCallback(
-    (
-      e: React.MouseEvent<Record<string, unknown>>,
-      templateTrackingKey: string
-    ) => {
+    (e: React.MouseEvent, template: { trackingKey: string; url: string }) => {
       // avoid invoking the "onClick" callback on the main dropdown button
       e.stopPropagation()
 
       sendTrackingEvent({
-        dropdownMenu: templateTrackingKey,
+        dropdownMenu: template.trackingKey,
         dropdownOpen: true,
       })
+      sendProjectListMB('new-project-click', {
+        item: template.trackingKey,
+        destinationURL: template.url,
+      })
     },
-    [sendTrackingEvent]
+    [sendProjectListMB, sendTrackingEvent]
   )
 
   const [importProjectFromGithubMenu] = importOverleafModules(
@@ -144,113 +152,126 @@ function NewProjectButton({
   )
 
   const ImportProjectFromGithubMenu: JSXElementConstructor<{
-    onClick: (e: React.MouseEvent<Record<string, unknown>>) => void
+    onClick: (e: React.MouseEvent) => void
   }> = importProjectFromGithubMenu?.import.default
 
   return (
     <>
-      <ControlledDropdown
-        id={id}
-        className={className}
-        onMainButtonClick={handleMainButtonClick}
+      <Dropdown
+        className={classnames('new-project-dropdown', className)}
+        onSelect={handleMainButtonClick}
+        onToggle={nextShow => {
+          if (nextShow) sendProjectListMB('new-project-expand', undefined)
+        }}
       >
-        <Dropdown.Toggle
-          noCaret
+        <DropdownToggle
+          id={id}
           className="new-project-button"
-          bsStyle="primary"
+          variant="primary"
         >
           {buttonText || t('new_project')}
-        </Dropdown.Toggle>
-        <Dropdown.Menu className={menuClassName}>
-          <MenuItem
-            onClick={e =>
-              handleModalMenuClick(e, {
-                modalVariant: 'blank_project',
-                dropdownMenuEvent: 'blank-project',
-              })
-            }
-          >
-            {t('blank_project')}
-          </MenuItem>
-          <MenuItem
-            onClick={e =>
-              handleModalMenuClick(e, {
-                modalVariant: 'example_project',
-                dropdownMenuEvent: 'example-project',
-              })
-            }
-          >
-            {t('example_project')}
-          </MenuItem>
-          <MenuItem
-            onClick={e =>
-              handleModalMenuClick(e, {
-                modalVariant: 'upload_project',
-                dropdownMenuEvent: 'upload-project',
-              })
-            }
-          >
-            {t('upload_project')}
-          </MenuItem>
-          {ImportProjectFromGithubMenu && (
-            <ImportProjectFromGithubMenu
+        </DropdownToggle>
+        <DropdownMenu>
+          <li role="none">
+            <DropdownItem
               onClick={e =>
                 handleModalMenuClick(e, {
-                  modalVariant: 'import_from_github',
-                  dropdownMenuEvent: 'import-from-github',
+                  modalVariant: 'blank_project',
+                  dropdownMenuEvent: 'blank-project',
                 })
               }
-            />
-          )}
-          {portalTemplates?.length > 0 ? (
+            >
+              {t('blank_project')}
+            </DropdownItem>
+          </li>
+          <li role="none">
+            <DropdownItem
+              onClick={e =>
+                handleModalMenuClick(e, {
+                  modalVariant: 'example_project',
+                  dropdownMenuEvent: 'example-project',
+                })
+              }
+            >
+              {t('example_project')}
+            </DropdownItem>
+          </li>
+          <li role="none">
+            <DropdownItem
+              onClick={e =>
+                handleModalMenuClick(e, {
+                  modalVariant: 'upload_project',
+                  dropdownMenuEvent: 'upload-project',
+                })
+              }
+            >
+              {t('upload_project')}
+            </DropdownItem>
+          </li>
+          <li role="none">
+            {ImportProjectFromGithubMenu && (
+              <ImportProjectFromGithubMenu
+                onClick={e =>
+                  handleModalMenuClick(e, {
+                    modalVariant: 'import_from_github',
+                    dropdownMenuEvent: 'import-from-github',
+                  })
+                }
+              />
+            )}
+          </li>
+          {portalTemplates.length > 0 ? (
             <>
-              <MenuItem divider />
-              <MenuItem header>
+              <DropdownDivider />
+              <DropdownHeader aria-hidden="true">
                 {`${t('institution')} ${t('templates')}`}
-              </MenuItem>
+              </DropdownHeader>
               {portalTemplates.map((portalTemplate, index) => (
-                <MenuItem
-                  key={`portal-template-${index}`}
-                  href={`${portalTemplate.url}#templates`}
-                  onClick={e =>
-                    handlePortalTemplateClick(e, portalTemplate.name)
-                  }
-                >
-                  {portalTemplate.name}
-                </MenuItem>
+                <li role="none" key={`portal-template-${index}`}>
+                  <DropdownItem
+                    key={`portal-template-${index}`}
+                    href={`${portalTemplate.url}#templates`}
+                    onClick={e => handlePortalTemplateClick(e, portalTemplate)}
+                    aria-label={`${portalTemplate.name} ${t('template')}`}
+                  >
+                    {portalTemplate.name}
+                  </DropdownItem>
+                </li>
               ))}
             </>
           ) : null}
 
           {templateLinks && templateLinks.length > 0 && (
             <>
-              <MenuItem divider />
-              <MenuItem header>{t('templates')}</MenuItem>
+              <DropdownDivider />
+              <DropdownHeader aria-hidden="true">
+                {t('templates')}
+              </DropdownHeader>
             </>
           )}
           {templateLinks?.map((templateLink, index) => (
-            <MenuItem
-              key={`new-project-button-template-${index}`}
-              href={templateLink.url}
-              onClick={e =>
-                handleStaticTemplateClick(e, templateLink.trackingKey)
-              }
-            >
-              {templateLink.name === 'view_all'
-                ? t('view_all')
-                : templateLink.name}
-            </MenuItem>
+            <li role="none" key={`new-project-button-template-${index}`}>
+              <DropdownItem
+                href={templateLink.url}
+                onClick={e => handleStaticTemplateClick(e, templateLink)}
+                aria-label={`${templateLink.name} ${t('template')}`}
+              >
+                {templateLink.name === 'view_all'
+                  ? t('view_all')
+                  : templateLink.name}
+              </DropdownItem>
+            </li>
           ))}
           {showAddAffiliationWidget && enableAddAffiliationWidget ? (
             <>
-              <MenuItem divider />
+              <DropdownDivider />
               <li className="add-affiliation-mobile-wrapper">
                 <AddAffiliation className="is-mobile" />
               </li>
             </>
           ) : null}
-        </Dropdown.Menu>
-      </ControlledDropdown>
+        </DropdownMenu>
+      </Dropdown>
       <NewProjectButtonModal modal={modal} onHide={() => setModal(null)} />
     </>
   )

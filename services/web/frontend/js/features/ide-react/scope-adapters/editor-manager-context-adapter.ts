@@ -1,17 +1,27 @@
 import { ReactScopeValueStore } from '@/features/ide-react/scope-value-store/react-scope-value-store'
 import customLocalStorage from '@/infrastructure/local-storage'
+import { DocumentContainer } from '@/features/ide-react/editor/document-container'
+
+export type EditorScopeValue = {
+  showSymbolPalette: false
+  toggleSymbolPalette: () => void
+  sharejs_doc: DocumentContainer | null
+  open_doc_id: string | null
+  open_doc_name: string | null
+  opening: boolean
+  trackChanges: boolean
+  wantTrackChanges: boolean
+  showVisual: boolean
+  error_state: boolean
+}
 
 export function populateEditorScope(
   store: ReactScopeValueStore,
   projectId: string
 ) {
-  // This value is not used in the React code. It's just here to prevent errors
-  // from EditorProvider
-  store.set('state.loading', false)
-
   store.set('project.name', null)
 
-  store.set('editor', {
+  const editor: Omit<EditorScopeValue, 'showVisual'> = {
     showSymbolPalette: false,
     toggleSymbolPalette: () => {},
     sharejs_doc: null,
@@ -20,10 +30,10 @@ export function populateEditorScope(
     opening: true,
     trackChanges: false,
     wantTrackChanges: false,
-    // No Ace here
-    newSourceEditor: true,
     error_state: false,
-  })
+  }
+  store.set('editor', editor)
+
   store.persisted(
     'editor.showVisual',
     showVisualFallbackValue(projectId),

@@ -1,5 +1,7 @@
 import { generateSHA1Hash } from '../../shared/utils/sha1'
 import { debugging, debugConsole } from '@/utils/debugging'
+import getMeta from '@/utils/meta'
+import { postJSON } from '@/infrastructure/fetch-json'
 
 var _createClass = function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; }();
 
@@ -908,6 +910,7 @@ export const { Doc } = (() => {
         openData = {};
       }
       this.version = openData.v;
+      this.lastServerActivity = performance.now()
       this.snapshot = openData.snaphot;
       if (openData.type) {
         this._setType(openData.type);
@@ -956,7 +959,7 @@ export const { Doc } = (() => {
         // Its important that these event handlers are called with oldSnapshot.
         // The reason is that the OT type APIs might need to access the snapshots to
         // determine information about the received op.
-        this.emit('change', docOp, oldSnapshot, msg);
+        this.emit('change', docOp, oldSnapshot, msg, isRemote);
         if (isRemote) {
           return this.emit('remoteop', docOp, oldSnapshot, msg);
         }
@@ -1005,8 +1008,8 @@ export const { Doc } = (() => {
 
         this.type = type;
         if (type.api) {
-          for (var k in type.api) {
-            var v = type.api[k];this[k] = v;
+          for (const k of ['insert', 'del', 'getText', 'getLength', '_register']) {
+            this[k] = type.api[k]
           }
           return typeof this._register === 'function' ? this._register() : undefined;
         } else {
@@ -1081,11 +1084,42 @@ export const { Doc } = (() => {
           }
           return this._closeCallback = null;
         } else if (msg.op === null && error === 'Op already submitted') {
+          // Overleaf: note that this branch is never reached, as `error` is always undefined
+
           // We've tried to resend an op to the server, which has already been received successfully. Do nothing.
           // The op will be confirmed normally when we get the op itself was echoed back from the server
           // (handled below).
 
         } else if (msg.op === undefined && msg.v !== undefined || msg.op && Array.from(this.inflightSubmittedIds).includes(msg.meta.source)) {
+          // Overleaf: avoid clearing inflightOp on repeated acknowledgement of operations on the same version
+          if (!msg.error) {
+            if (msg.op === undefined && msg.v !== undefined) {
+              if (msg.v < this.version) {
+                postJSON('/error/client', {
+                  body: {
+                    error: {
+                      message: 'out-of-order-ack-ignored'
+                    },
+                    meta: { msg, version: this.version }
+                  }
+                })
+                return
+              }
+            } else {
+              if (msg.v < this.version) {
+                postJSON('/error/client', {
+                  body: {
+                    error: {
+                      message: 'out-of-order-self-op-ignored'
+                    },
+                    meta: { msg: { v: msg.v }, version: this.version }
+                  }
+                })
+                // return // TODO: enable this?
+              }
+            }
+          }
+
           // Our inflight op has been acknowledged.
           var callback = void 0;
           var oldInflightOp = this.inflightOp;
@@ -1168,6 +1202,7 @@ export const { Doc } = (() => {
             }
 
             this.version++;
+            this.lastServerActivity = performance.now()
             this.emit('acknowledge', oldInflightOp);
             var _iteratorNormalCompletion13 = true;
             var _didIteratorError13 = false;
@@ -1235,6 +1270,7 @@ export const { Doc } = (() => {
           }
 
           this.version++;
+          this.lastServerActivity = performance.now()
           // Finally, apply the op to @snapshot and trigger any event listeners
           return this._otApply(docOp, true, msg);
         } else if (msg.meta) {
@@ -1278,7 +1314,7 @@ export const { Doc } = (() => {
 
         this.emit('flipped_pending_to_inflight');
 
-        if (window.useShareJsHash || debugging) {
+        if (getMeta('ol-useShareJsHash') || debugging) {
           var now = Date.now()
           var age = this.__lastSubmitTimestamp && (now - this.__lastSubmitTimestamp)
           var RECOMPUTE_HASH_INTERVAL = 5000
@@ -1286,7 +1322,8 @@ export const { Doc } = (() => {
           var needToRecomputeHash = !this.__lastSubmitTimestamp || (age > RECOMPUTE_HASH_INTERVAL) || (age < 0)
           if (needToRecomputeHash || debugging) {
             // send git hash of current snapshot
-            var sha1 = generateSHA1Hash("blob " + this.snapshot.length + "\x00" + this.snapshot)
+            const str = this.getText()
+            var sha1 = generateSHA1Hash("blob " + str.length + "\x00" + str)
             this.__lastSubmitTimestamp = now;
           }
         }

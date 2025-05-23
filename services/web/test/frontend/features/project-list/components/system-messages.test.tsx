@@ -5,15 +5,13 @@ import SystemMessages from '@/shared/components/system-messages'
 
 describe('<SystemMessages />', function () {
   beforeEach(function () {
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
     localStorage.clear()
-    window.metaAttributesCache = new Map()
   })
 
   afterEach(function () {
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
     localStorage.clear()
-    window.metaAttributesCache = new Map()
   })
 
   it('renders non-dismissable system message', async function () {
@@ -24,9 +22,9 @@ describe('<SystemMessages />', function () {
     fetchMock.get(/\/system\/messages/, [data])
     render(<SystemMessages />)
 
-    await fetchMock.flush(true)
+    await fetchMock.callHistory.flush(true)
 
-    screen.getByText(data.content)
+    await screen.findByText(data.content)
     expect(screen.queryByRole('button', { name: /close/i })).to.be.null
   })
 
@@ -38,9 +36,9 @@ describe('<SystemMessages />', function () {
     fetchMock.get(/\/system\/messages/, [data])
     render(<SystemMessages />)
 
-    await fetchMock.flush(true)
+    await fetchMock.callHistory.flush(true)
 
-    screen.getByText(data.content)
+    await screen.findByText(data.content)
     const closeBtn = screen.getByRole('button', { name: /close/i })
     fireEvent.click(closeBtn)
 
@@ -58,12 +56,11 @@ describe('<SystemMessages />', function () {
     }
     const currentUrl = '/project'
     fetchMock.get(/\/system\/messages/, [])
-    window.metaAttributesCache = new Map()
     window.metaAttributesCache.set('ol-suggestedLanguage', data)
     window.metaAttributesCache.set('ol-currentUrl', currentUrl)
     render(<SystemMessages />)
 
-    await fetchMock.flush(true)
+    await fetchMock.callHistory.flush(true)
 
     const link = screen.getByRole('link', { name: /click here/i })
     expect(link.getAttribute('href')).to.equal(`${data.url}${currentUrl}`)

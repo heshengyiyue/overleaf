@@ -12,6 +12,7 @@ import fetchMock from 'fetch-mock'
 import EmailsSection from '../../../../../../frontend/js/features/settings/components/emails-section'
 import { Institution } from '../../../../../../types/institution'
 import { Affiliation } from '../../../../../../types/affiliation'
+import getMeta from '@/utils/meta'
 
 const userEmailData: UserEmailData = {
   confirmedAt: '2022-03-10T10:59:44.139Z',
@@ -33,15 +34,14 @@ const userEmailData2: UserEmailData & { affiliation: Affiliation } = {
 
 describe('email actions - make primary', function () {
   beforeEach(function () {
-    window.metaAttributesCache.set('ol-ExposedSettings', {
+    Object.assign(getMeta('ol-ExposedSettings'), {
       hasAffiliationsFeature: true,
     })
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   afterEach(function () {
-    window.metaAttributesCache = new Map()
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   describe('disabled `make primary` button', function () {
@@ -92,7 +92,7 @@ describe('email actions - make primary', function () {
         name: /make primary/i,
       })) as HTMLButtonElement
 
-      userEvent.hover(button.parentElement!)
+      await userEvent.hover(button.parentElement!)
 
       await screen.findByText(
         /Please confirm your affiliation before making this the primary/i
@@ -109,7 +109,7 @@ describe('email actions - make primary', function () {
         name: /make primary/i,
       })) as HTMLButtonElement
 
-      userEvent.hover(button.parentElement!)
+      await userEvent.hover(button.parentElement!)
 
       await screen.findByText('Make this the primary email, used to log in', {
         exact: false,
@@ -117,7 +117,7 @@ describe('email actions - make primary', function () {
     })
 
     it('when not linked to institution', async function () {
-      window.metaAttributesCache.set('ol-ExposedSettings', {
+      Object.assign(getMeta('ol-ExposedSettings'), {
         hasAffiliationsFeature: true,
         hasSamlFeature: true,
       })
@@ -150,7 +150,7 @@ describe('email actions - make primary', function () {
         name: /make primary/i,
       })) as HTMLButtonElement[]
 
-      userEvent.hover(buttons[1].parentElement!)
+      await userEvent.hover(buttons[1].parentElement!)
 
       await screen.findByText(
         'Please confirm your email by linking to your institutional account before making it the primary email',
@@ -169,12 +169,10 @@ describe('email actions - make primary', function () {
       fireEvent.click(button)
 
       const withinModal = within(screen.getByRole('dialog'))
-      fireEvent.click(withinModal.getByRole('button', { name: /confirm/i }))
-      expect(screen.queryByRole('dialog')).to.be.null
-
-      await waitForElementToBeRemoved(() =>
-        screen.getByRole('button', { name: /Processing/i, hidden: true })
+      fireEvent.click(
+        withinModal.getByRole('button', { name: 'Change primary email' })
       )
+      await waitForElementToBeRemoved(() => screen.getByRole('dialog'))
     }
 
     it('shows confirmation modal and closes it', async function () {
@@ -196,16 +194,17 @@ describe('email actions - make primary', function () {
       withinModal.getByText(
         /important .* notifications will be sent to this email address/i
       )
-      withinModal.getByRole('button', { name: /confirm/i })
+      withinModal.getByRole('button', { name: 'Change primary email' })
 
       fireEvent.click(withinModal.getByRole('button', { name: /cancel/i }))
-      expect(screen.queryByRole('dialog')).to.be.null
+
+      await waitForElementToBeRemoved(screen.getByRole('dialog'))
     })
 
     it('shows loader and removes button', async function () {
       fetchMock
         .get('/user/emails?ensureAffiliation=true', [userEmailData])
-        .post('/user/emails/default', 200)
+        .post('/user/emails/default?delete-unconfirmed-primary', 200)
       render(<EmailsSection />)
 
       await confirmPrimaryEmail()
@@ -221,7 +220,7 @@ describe('email actions - make primary', function () {
     it('shows error', async function () {
       fetchMock
         .get('/user/emails?ensureAffiliation=true', [userEmailData])
-        .post('/user/emails/default', 503)
+        .post('/user/emails/default?delete-unconfirmed-primary', 503)
       render(<EmailsSection />)
 
       await confirmPrimaryEmail()
@@ -234,15 +233,14 @@ describe('email actions - make primary', function () {
 
 describe('email actions - delete', function () {
   beforeEach(function () {
-    window.metaAttributesCache.set('ol-ExposedSettings', {
+    Object.assign(getMeta('ol-ExposedSettings'), {
       hasAffiliationsFeature: true,
     })
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   afterEach(function () {
-    window.metaAttributesCache = new Map()
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   it('shows loader when deleting and removes the row', async function () {

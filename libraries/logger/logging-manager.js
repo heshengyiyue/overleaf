@@ -1,7 +1,6 @@
-const Stream = require('stream')
+const Stream = require('node:stream')
 const bunyan = require('bunyan')
 const GCPManager = require('./gcp-manager')
-const SentryManager = require('./sentry-manager')
 const Serializers = require('./serializers')
 const {
   FileLogLevelChecker,
@@ -9,11 +8,16 @@ const {
 } = require('./log-level-checker')
 
 const LoggingManager = {
+  /**
+   * @param {string} name - The name of the logger
+   */
   initialize(name) {
     this.isProduction =
       (process.env.NODE_ENV || '').toLowerCase() === 'production'
+    const isTest = (process.env.NODE_ENV || '').toLowerCase() === 'test'
     this.defaultLevel =
-      process.env.LOG_LEVEL || (this.isProduction ? 'info' : 'debug')
+      process.env.LOG_LEVEL ||
+      (this.isProduction ? 'info' : isTest ? 'fatal' : 'debug')
     this.loggerName = name
     this.logger = bunyan.createLogger({
       name,
@@ -30,18 +34,30 @@ const LoggingManager = {
     return this
   },
 
-  initializeErrorReporting(dsn, options) {
-    this.sentryManager = new SentryManager()
+  /**
+   * @param {Record<string, any>|string} attributes - Attributes to log (nice serialization for err, req, res)
+   * @param {string} [message] - Optional message
+   * @signature `debug(attributes, message)`
+   * @signature `debug(message)`
+   */
+  debug(attributes, message, ...args) {
+    return this.logger.debug(attributes, message, ...args)
   },
 
-  debug() {
-    return this.logger.debug.apply(this.logger, arguments)
+  /**
+   * @param {Record<string, any>|string} attributes - Attributes to log (nice serialization for err, req, res)
+   * @param {string} [message]
+   * @signature `info(attributes, message)`
+   * @signature `info(message)`
+   */
+  info(attributes, message, ...args) {
+    return this.logger.info(attributes, message, ...args)
   },
 
-  info() {
-    return this.logger.info.apply(this.logger, arguments)
-  },
-
+  /**
+   * @param {Record<string, any>} attributes - Attributes to log (nice serialization for err, req, res)
+   * @param {string} [message]
+   */
   error(attributes, message, ...args) {
     if (this.ringBuffer !== null && Array.isArray(this.ringBuffer.records)) {
       attributes.logBuffer = this.ringBuffer.records.filter(function (record) {
@@ -49,24 +65,33 @@ const LoggingManager = {
       })
     }
     this.logger.error(attributes, message, ...Array.from(args))
-    if (this.sentryManager) {
-      this.sentryManager.captureExceptionRateLimited(attributes, message)
-    }
   },
 
-  err() {
-    return this.error.apply(this, arguments)
+  /**
+   * Alias to the error method.
+   * @param {Record<string, any>} attributes - Attributes to log (nice serialization for err, req, res)
+   * @param {string} [message]
+   */
+  err(attributes, message, ...args) {
+    return this.error(attributes, message, ...args)
   },
 
-  warn() {
-    return this.logger.warn.apply(this.logger, arguments)
+  /**
+   * @param {Record<string, any>|string} attributes - Attributes to log (nice serialization for err, req, res)
+   * @param {string} [message]
+   * @signature `warn(attributes, message)`
+   * @signature `warn(message)`
+   */
+  warn(attributes, message, ...args) {
+    return this.logger.warn(attributes, message, ...args)
   },
 
+  /**
+   * @param {Record<string, any>} attributes - Attributes to log (nice serialization for err, req, res)
+   * @param {string} [message]
+   */
   fatal(attributes, message) {
     this.logger.fatal(attributes, message)
-    if (this.sentryManager) {
-      this.sentryManager.captureException(attributes, message, 'fatal')
-    }
   },
 
   _getOutputStreamConfig() {

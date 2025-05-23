@@ -16,20 +16,20 @@ describe('<UntrashProjectButton />', function () {
     resetProjectListContextFetch()
   })
 
-  it('renders tooltip for button', function () {
+  it('renders tooltip for button', async function () {
     renderWithProjectListContext(
       <UntrashProjectButtonTooltip project={trashedProject} />
     )
-    const btn = screen.getByLabelText('Restore')
+    const btn = screen.getByRole('button', { name: 'Restore' })
     fireEvent.mouseOver(btn)
-    screen.getByRole('tooltip', { name: 'Restore' })
+    await screen.findByRole('tooltip', { name: 'Restore' })
   })
 
   it('does not render the button when project is current', function () {
     renderWithProjectListContext(
       <UntrashProjectButtonTooltip project={archiveableProject} />
     )
-    expect(screen.queryByLabelText('Restore')).to.be.null
+    expect(screen.queryByRole('button', { name: 'Restore' })).to.be.null
   })
 
   it('untrashes the project and updates the view data', async function () {
@@ -44,13 +44,14 @@ describe('<UntrashProjectButton />', function () {
     renderWithProjectListContext(
       <UntrashProjectButtonTooltip project={project} />
     )
-    const btn = screen.getByLabelText('Restore')
+    const btn = screen.getByRole('button', { name: 'Restore' })
     fireEvent.click(btn)
 
     await waitFor(
       () =>
-        expect(untrashProjectMock.called(`/project/${project.id}/trash`)).to.be
-          .true
+        expect(
+          untrashProjectMock.callHistory.called(`/project/${project.id}/trash`)
+        ).to.be.true
     )
   })
 })

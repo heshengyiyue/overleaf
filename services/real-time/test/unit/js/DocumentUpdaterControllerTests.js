@@ -11,7 +11,7 @@
  */
 const SandboxedModule = require('sandboxed-module')
 const sinon = require('sinon')
-const modulePath = require('path').join(
+const modulePath = require('node:path').join(
   __dirname,
   '../../../app/js/DocumentUpdaterController'
 )
@@ -55,7 +55,10 @@ describe('DocumentUpdaterController', function () {
         }),
         './EventLogger': (this.EventLogger = { checkEventOrder: sinon.stub() }),
         './HealthCheckManager': { check: sinon.stub() },
-        '@overleaf/metrics': (this.metrics = { inc: sinon.stub() }),
+        '@overleaf/metrics': (this.metrics = {
+          inc: sinon.stub(),
+          histogram: sinon.stub(),
+        }),
         './RoomManager': (this.RoomManager = {
           eventSource: sinon.stub().returns(this.RoomEvents),
         }),

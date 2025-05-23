@@ -1,20 +1,20 @@
 import { ChangeEvent, FC, memo, useCallback } from 'react'
-import useScopeValue from '../../../shared/hooks/use-scope-value'
-import Tooltip from '../../../shared/components/tooltip'
+import useScopeValue from '@/shared/hooks/use-scope-value'
+import OLTooltip from '@/features/ui/components/ol/ol-tooltip'
 import { sendMB } from '../../../infrastructure/event-tracking'
-import isValidTeXFile from '../../../main/is-valid-tex-file'
+import { isValidTeXFile } from '../../../main/is-valid-tex-file'
 import { useTranslation } from 'react-i18next'
-import { PromotionOverlay } from './table-generator/promotion/popover'
+import { useEditorManagerContext } from '@/features/ide-react/context/editor-manager-context'
 
 function EditorSwitch() {
   const { t } = useTranslation()
   const [visual, setVisual] = useScopeValue('editor.showVisual')
-  const [docName] = useScopeValue('editor.open_doc_name')
+  const { openDocName } = useEditorManagerContext()
 
-  const richTextAvailable = isValidTeXFile(docName)
+  const richTextAvailable = openDocName ? isValidTeXFile(openDocName) : false
 
   const handleChange = useCallback(
-    event => {
+    (event: ChangeEvent<HTMLInputElement>) => {
       const editorType = event.target.value
 
       switch (editorType) {
@@ -33,7 +33,10 @@ function EditorSwitch() {
   )
 
   return (
-    <div className="editor-toggle-switch">
+    <div
+      className="editor-toggle-switch"
+      aria-label={t('toolbar_code_visual_editor_switch')}
+    >
       <fieldset className="toggle-switch">
         <legend className="sr-only">Editor mode.</legend>
 
@@ -87,18 +90,18 @@ const RichTextToggle: FC<{
 
   if (disabled) {
     return (
-      <Tooltip
+      <OLTooltip
         description={t('visual_editor_is_only_available_for_tex_files')}
         id="rich-text-toggle-tooltip"
         overlayProps={{ placement: 'bottom' }}
         tooltipProps={{ className: 'tooltip-wide' }}
       >
         {toggle}
-      </Tooltip>
+      </OLTooltip>
     )
   }
 
-  return <PromotionOverlay>{toggle}</PromotionOverlay>
+  return toggle
 }
 
 export default memo(EditorSwitch)

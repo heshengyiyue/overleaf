@@ -18,21 +18,21 @@ describe('<LeaveProjectButtton />', function () {
     resetProjectListContextFetch()
   })
 
-  it('renders tooltip for button', function () {
+  it('renders tooltip for button', async function () {
     renderWithProjectListContext(
       <LeaveProjectButtonTooltip project={trashedAndNotOwnedProject} />
     )
-    const btn = screen.getByLabelText('Leave')
+    const btn = screen.getByRole('button', { name: 'Leave' })
     fireEvent.mouseOver(btn)
-    screen.getByRole('tooltip', { name: 'Leave' })
+    await screen.findByRole('tooltip', { name: 'Leave' })
   })
 
   it('does not render button when owner', function () {
-    window.user_id = trashedProject?.owner?.id
+    window.metaAttributesCache.set('ol-user_id', trashedProject.owner?.id)
     renderWithProjectListContext(
       <LeaveProjectButtonTooltip project={trashedProject} />
     )
-    const btn = screen.queryByLabelText('Leave')
+    const btn = screen.queryByRole('button', { name: 'Leave' })
     expect(btn).to.be.null
   })
 
@@ -40,14 +40,14 @@ describe('<LeaveProjectButtton />', function () {
     renderWithProjectListContext(
       <LeaveProjectButtonTooltip project={archivedProject} />
     )
-    expect(screen.queryByLabelText('Leave')).to.be.null
+    expect(screen.queryByRole('button', { name: 'Leave' })).to.be.null
   })
 
   it('does not render the button when project is current', function () {
     renderWithProjectListContext(
       <LeaveProjectButtonTooltip project={archiveableProject} />
     )
-    expect(screen.queryByLabelText('Leave')).to.be.null
+    expect(screen.queryByRole('button', { name: 'Leave' })).to.be.null
   })
 
   it('opens the modal and leaves the project', async function () {
@@ -62,19 +62,22 @@ describe('<LeaveProjectButtton />', function () {
     renderWithProjectListContext(
       <LeaveProjectButtonTooltip project={project} />
     )
-    const btn = screen.getByLabelText('Leave')
+    const btn = screen.getByRole('button', { name: 'Leave' })
     fireEvent.click(btn)
     screen.getByText('Leave Projects')
     screen.getByText('You are about to leave the following projects:')
     screen.getByText('This action cannot be undone.')
-    const confirmBtn = screen.getByText('Confirm') as HTMLButtonElement
+    const confirmBtn = screen.getByRole('button', {
+      name: 'Confirm',
+    }) as HTMLButtonElement
     fireEvent.click(confirmBtn)
     expect(confirmBtn.disabled).to.be.true
 
     await waitFor(
       () =>
-        expect(leaveProjectMock.called(`/project/${project.id}/leave`)).to.be
-          .true
+        expect(
+          leaveProjectMock.callHistory.called(`/project/${project.id}/leave`)
+        ).to.be.true
     )
   })
 })

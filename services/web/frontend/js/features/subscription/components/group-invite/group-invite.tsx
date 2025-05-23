@@ -7,6 +7,9 @@ import ManagedUserCannotJoin from './managed-user-cannot-join'
 import Notification from '@/shared/components/notification'
 import JoinGroup from './join-group'
 import AcceptedInvite from './accepted-invite'
+import OLRow from '@/features/ui/components/ol/ol-row'
+import OLCol from '@/features/ui/components/ol/ol-col'
+import OLPageContentCard from '@/features/ui/components/ol/ol-page-content-card'
 
 export type InviteViewTypes =
   | 'invite'
@@ -18,10 +21,8 @@ export type InviteViewTypes =
 function GroupInviteViews() {
   const hasIndividualRecurlySubscription = getMeta(
     'ol-hasIndividualRecurlySubscription'
-  ) as boolean
-  const cannotJoinSubscription = getMeta(
-    'ol-cannot-join-subscription'
-  ) as boolean
+  )
+  const cannotJoinSubscription = getMeta('ol-cannot-join-subscription')
 
   useEffect(() => {
     if (cannotJoinSubscription) {
@@ -52,8 +53,8 @@ function GroupInviteViews() {
 }
 
 export default function GroupInvite() {
-  const inviterName = getMeta('ol-inviterName') as string
-  const expired = getMeta('ol-expired') as boolean
+  const inviterName = getMeta('ol-inviterName')
+  const expired = getMeta('ol-expired')
   const { isReady } = useWaitForI18n()
   const { t } = useTranslation()
 
@@ -64,16 +65,16 @@ export default function GroupInvite() {
   return (
     <div className="container" id="main-content">
       {expired && (
-        <div className="row">
-          <div className="col-md-8 col-md-offset-2">
+        <OLRow>
+          <OLCol lg={{ span: 8, offset: 2 }}>
             <Notification type="error" content={t('email_link_expired')} />
-          </div>
-        </div>
+          </OLCol>
+        </OLRow>
       )}
 
-      <div className="row row-spaced">
-        <div className="col-md-8 col-md-offset-2">
-          <div className="card">
+      <OLRow className="row row-spaced">
+        <OLCol lg={{ span: 8, offset: 2 }}>
+          <OLPageContentCard>
             <div className="page-header">
               <h1 className="text-center">
                 <Trans
@@ -89,9 +90,9 @@ export default function GroupInvite() {
               </h1>
             </div>
             <GroupInviteViews />
-          </div>
-        </div>
-      </div>
+          </OLPageContentCard>
+        </OLCol>
+      </OLRow>
     </div>
   )
 }

@@ -1,10 +1,10 @@
 export type Nullable<T> = T | null
 
-// eslint-disable-next-line no-use-before-define, @typescript-eslint/no-empty-interface
+// eslint-disable-next-line @typescript-eslint/no-empty-interface, @typescript-eslint/no-empty-object-type
 interface DeepReadonlyArray<T> extends ReadonlyArray<DeepReadonly<T>> {}
 
 type DeepReadonlyObject<T> = {
-  readonly [P in keyof T]: DeepReadonly<T[P]> // eslint-disable-line no-use-before-define
+  readonly [P in keyof T]: DeepReadonly<T[P]>
 }
 
 export type DeepReadonly<T> = T extends (infer R)[]
@@ -18,7 +18,5 @@ export type DeepReadonly<T> = T extends (infer R)[]
 export type DeepPartial<T> = Partial<{ [P in keyof T]: DeepPartial<T[P]> }>
 
 export type MergeAndOverride<Parent, Own> = Own & Omit<Parent, keyof Own>
-
-export type Entries<T extends object> = [keyof T, T[keyof T]][]
 
 export type Keys<T extends object> = (keyof T)[]

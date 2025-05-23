@@ -21,13 +21,13 @@ describe('<ChatPane />', function () {
   }
 
   beforeEach(function () {
-    window.metaAttributesCache = new Map()
     window.metaAttributesCache.set('ol-user', user)
+    window.metaAttributesCache.set('ol-chatEnabled', true)
+    window.metaAttributesCache.set('ol-preventCompileOnLoad', true)
   })
 
   afterEach(function () {
-    fetchMock.reset()
-    window.metaAttributesCache = new Map()
+    fetchMock.removeRoutes().clearHistory()
   })
 
   const testMessages = [
@@ -46,7 +46,7 @@ describe('<ChatPane />', function () {
   ]
 
   beforeEach(function () {
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
     cleanUpContext()
 
     stubMathJax()
@@ -74,7 +74,7 @@ describe('<ChatPane />', function () {
     await screen.findByText('Try again')
 
     // bring chat back up
-    fetchMock.reset()
+    fetchMock.removeRoutes().clearHistory()
     fetchMock.get(/messages/, [])
 
     const reconnectButton = screen.getByRole('button', {

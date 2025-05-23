@@ -2,25 +2,27 @@ import FreePlan from './free-plan'
 import IndividualPlan from './individual-plan'
 import GroupPlan from './group-plan'
 import CommonsPlan from './commons-plan'
+import PausedPlan from './paused-plan'
 import getMeta from '../../../../utils/meta'
-import { Subscription } from '../../../../../../types/project/dashboard/subscription'
 
 function CurrentPlanWidget() {
-  const usersBestSubscription: Subscription | undefined = getMeta(
-    'ol-usersBestSubscription'
-  )
+  const usersBestSubscription = getMeta('ol-usersBestSubscription')
 
   if (!usersBestSubscription) {
     return null
   }
 
   const { type } = usersBestSubscription
-  const isFreePlan = type === 'free'
+  const isFreePlan = type === 'free' || type === 'standalone-ai-add-on'
   const isIndividualPlan = type === 'individual'
   const isGroupPlan = type === 'group'
   const isCommonsPlan = type === 'commons'
+  const isPaused =
+    isIndividualPlan &&
+    usersBestSubscription.subscription?.recurlyStatus?.state === 'paused'
 
   const featuresPageURL = '/learn/how-to/Overleaf_premium_features'
+  const subscriptionPageUrl = '/user/subscription'
 
   let currentPlan
 
@@ -36,6 +38,10 @@ function CurrentPlanWidget() {
         featuresPageURL={featuresPageURL}
       />
     )
+  }
+
+  if (isPaused) {
+    currentPlan = <PausedPlan subscriptionPageUrl={subscriptionPageUrl} />
   }
 
   if (isGroupPlan) {

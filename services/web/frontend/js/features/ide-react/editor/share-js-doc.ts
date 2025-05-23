@@ -2,30 +2,39 @@
 // Migrated from services/web/frontend/js/ide/editor/ShareJsDoc.js
 
 import EventEmitter from '../../../utils/EventEmitter'
-import { Doc } from '@/vendor/libs/sharejs'
+import sharejs, { Doc } from '@/vendor/libs/sharejs'
 import { Socket } from '@/features/ide-react/connection/types/socket'
 import { debugConsole } from '@/utils/debugging'
 import { decodeUtf8 } from '@/utils/decode-utf8'
 import { IdeEventEmitter } from '@/features/ide-react/create-ide-event-emitter'
-import { EventLog } from '@/features/ide-react/editor/event-log'
 import EditorWatchdogManager from '@/features/ide-react/connection/editor-watchdog-manager'
 import {
   Message,
   ShareJsConnectionState,
   ShareJsOperation,
+  ShareJsTextType,
   TrackChangesIdSeeds,
 } from '@/features/ide-react/editor/types/document'
 import { EditorFacade } from '@/features/source-editor/extensions/realtime'
 import { recordDocumentFirstChangeEvent } from '@/features/event-tracking/document-first-change-event'
+import getMeta from '@/utils/meta'
+import { HistoryOTType } from './share-js-history-ot-type'
+import { StringFileData } from 'overleaf-editor-core/index'
+import {
+  RawEditOperation,
+  StringFileRawData,
+} from 'overleaf-editor-core/lib/types'
 
 // All times below are in milliseconds
 const SINGLE_USER_FLUSH_DELAY = 2000
 const MULTI_USER_FLUSH_DELAY = 500
 const INFLIGHT_OP_TIMEOUT = 5000 // Retry sending ops after 5 seconds without an ack
 const WAIT_FOR_CONNECTION_TIMEOUT = 500
-const FATAL_OP_TIMEOUT = 30000
+const FATAL_OP_TIMEOUT = 45000
+const RECENT_ACK_LIMIT = 2 * SINGLE_USER_FLUSH_DELAY
 
 type Update = Record<string, any>
+export type OTType = 'sharejs-text-ot' | 'history-ot'
 
 type Connection = {
   send: (update: Update) => void
@@ -34,7 +43,6 @@ type Connection = {
 }
 
 export class ShareJsDoc extends EventEmitter {
-  type: string
   track_changes = false
   track_changes_id_seeds: TrackChangesIdSeeds | null = null
   connection: Connection
@@ -42,7 +50,9 @@ export class ShareJsDoc extends EventEmitter {
   // @ts-ignore
   _doc: Doc
   private editorWatchdogManager: EditorWatchdogManager
-  private lastAcked: Date | null = null
+  private lastAcked: number | null = null
+  private pendingOpCreatedAt: number | null = null
+  private inflightOpCreatedAt: number | null = null
   private queuedMessageTimer: number | null = null
   private queuedMessages: Message[] = []
   private detachEditorWatchdogManager: (() => void) | null = null
@@ -55,12 +65,23 @@ export class ShareJsDoc extends EventEmitter {
     readonly socket: Socket,
     private readonly globalEditorWatchdogManager: EditorWatchdogManager,
     private readonly eventEmitter: IdeEventEmitter,
-    private readonly eventLog: EventLog
+    readonly type: OTType = 'sharejs-text-ot'
   ) {
     super()
-    this.type = 'text'
+    let sharejsType: ShareJsTextType = sharejs.types.text
     // Decode any binary bits of data
-    const snapshot = docLines.map(line => decodeUtf8(line)).join('\n')
+    let snapshot: string | StringFileData
+    if (this.type === 'history-ot') {
+      snapshot = StringFileData.fromRaw(
+        docLines as unknown as StringFileRawData
+      )
+      sharejsType = new HistoryOTType(snapshot) as ShareJsTextType<
+        StringFileData,
+        RawEditOperation[]
+      >
+    } else {
+      snapshot = docLines.map(line => decodeUtf8(line)).join('\n')
+    }
 
     this.connection = {
       send: (update: Update) => {
@@ -87,17 +108,24 @@ export class ShareJsDoc extends EventEmitter {
     }
 
     this._doc = new Doc(this.connection, this.doc_id, {
-      type: this.type,
+      type: sharejsType,
     })
     this._doc.setFlushDelay(SINGLE_USER_FLUSH_DELAY)
     this._doc.on('change', (...args: any[]) => {
+      const isRemote = args[3]
+      if (!isRemote && !this.pendingOpCreatedAt) {
+        debugConsole.log('set pendingOpCreatedAt', new Date())
+        this.pendingOpCreatedAt = performance.now()
+      }
       return this.trigger('change', ...args)
     })
     this.editorWatchdogManager = new EditorWatchdogManager({
       parent: globalEditorWatchdogManager,
     })
     this._doc.on('acknowledge', () => {
-      this.lastAcked = new Date() // note time of last ack from server for an op we sent
+      this.lastAcked = performance.now() // note time of last ack from server for an op we sent
+      this.inflightOpCreatedAt = null
+      debugConsole.log('unset inflightOpCreatedAt')
       this.editorWatchdogManager.onAck() // keep track of last ack globally
       return this.trigger('acknowledge')
     })
@@ -108,6 +136,10 @@ export class ShareJsDoc extends EventEmitter {
       return this.trigger('remoteop', ...args)
     })
     this._doc.on('flipped_pending_to_inflight', () => {
+      this.inflightOpCreatedAt = this.pendingOpCreatedAt
+      debugConsole.log('set inflightOpCreatedAt from pendingOpCreatedAt')
+      this.pendingOpCreatedAt = null
+      debugConsole.log('unset pendingOpCreatedAt')
       return this.trigger('flipped_pending_to_inflight')
     })
     this._doc.on('saved', () => {
@@ -129,14 +161,8 @@ export class ShareJsDoc extends EventEmitter {
 
   private removeCarriageReturnCharFromShareJsDoc() {
     const doc = this._doc
-    if (doc.snapshot.indexOf('\r') === -1) {
-      return
-    }
-    this.eventLog.pushEvent('remove-carriage-return-char', {
-      doc_id: this.doc_id,
-    })
     let nextPos
-    while ((nextPos = doc.snapshot.indexOf('\r')) !== -1) {
+    while ((nextPos = doc.getText().indexOf('\r')) !== -1) {
       debugConsole.log('[ShareJsDoc] remove-carriage-return-char', nextPos)
       doc.del(nextPos, 1)
     }
@@ -249,11 +275,15 @@ export class ShareJsDoc extends EventEmitter {
   }
 
   getSnapshot() {
-    return this._doc.snapshot as string | undefined
+    return this._doc.getText() as string
   }
 
   getVersion() {
     return this._doc.version
+  }
+
+  getTimeSinceLastServerActivity() {
+    return Math.floor(performance.now() - this._doc.lastServerActivity)
   }
 
   getType() {
@@ -280,7 +310,7 @@ export class ShareJsDoc extends EventEmitter {
     this.connection.id = this.socket.publicId
     this._doc.autoOpen = false
     this._doc._connectionStateChanged(state)
-    return (this.lastAcked = null) // reset the last ack time when connection changes
+    this.lastAcked = null // reset the last ack time when connection changes
   }
 
   hasBufferedOps() {
@@ -299,8 +329,16 @@ export class ShareJsDoc extends EventEmitter {
     // check if we have received an ack recently (within a factor of two of the single user flush delay)
     return (
       this.lastAcked !== null &&
-      Date.now() - this.lastAcked.getTime() < 2 * SINGLE_USER_FLUSH_DELAY
+      performance.now() - this.lastAcked < RECENT_ACK_LIMIT
     )
+  }
+
+  getInflightOpCreatedAt() {
+    return this.inflightOpCreatedAt
+  }
+
+  getPendingOpCreatedAt() {
+    return this.pendingOpCreatedAt
   }
 
   private attachEditorWatchdogManager(editor: EditorFacade) {
@@ -327,8 +365,7 @@ export class ShareJsDoc extends EventEmitter {
 
   attachToCM6(cm6: EditorFacade) {
     this.attachToEditor(cm6, () => {
-      // @ts-ignore
-      cm6.attachShareJs(this._doc, window.maxDocLength)
+      cm6.attachShareJs(this._doc, getMeta('ol-maxDocLength'))
     })
   }
 

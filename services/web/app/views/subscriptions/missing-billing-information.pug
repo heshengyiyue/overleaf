@@ -1,0 +1,10 @@
+extends ../layout-marketing
+
+block entrypointVar
+	- entrypoint = 'pages/user/subscription/group-management/missing-billing-information'
+
+block append meta
+	meta(name="ol-groupName", data-type="string", content=groupName)
+
+block content
+	main.content.content-alt#missing-billing-information-root

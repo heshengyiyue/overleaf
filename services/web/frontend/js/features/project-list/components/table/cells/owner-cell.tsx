@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next'
-import Icon from '../../../../../shared/components/icon'
-import Tooltip from '../../../../../shared/components/tooltip'
 import { getOwnerName } from '../../../util/project'
 import { Project } from '../../../../../../../types/project/dashboard/api'
+import OLTooltip from '@/features/ui/components/ol/ol-tooltip'
+import MaterialIcon from '@/shared/components/material-icon'
 
 type LinkSharingIconProps = {
   prependSpace: boolean
@@ -17,7 +17,7 @@ function LinkSharingIcon({
 }: LinkSharingIconProps) {
   const { t } = useTranslation()
   return (
-    <Tooltip
+    <OLTooltip
       key={`tooltip-link-sharing-${project.id}`}
       id={`tooltip-link-sharing-${project.id}`}
       description={t('link_sharing')}
@@ -26,13 +26,13 @@ function LinkSharingIcon({
       {/* OverlayTrigger won't fire unless icon is wrapped in a span */}
       <span className={className}>
         {prependSpace ? ' ' : ''}
-        <Icon
+        <MaterialIcon
           type="link"
-          className="small"
+          className="align-text-bottom"
           accessibilityLabel={t('link_sharing')}
         />
       </span>
-    </Tooltip>
+    </OLTooltip>
   )
 }
 
@@ -48,14 +48,8 @@ export default function OwnerCell({ project }: OwnerCellProps) {
   return (
     <>
       {ownerName === 'You' ? t('you') : ownerName}
-      {project.source === 'token' ? (
-        <LinkSharingIcon
-          className="hidden-xs"
-          project={project}
-          prependSpace={!!project.owner}
-        />
-      ) : (
-        ''
+      {project.source === 'token' && (
+        <LinkSharingIcon project={project} prependSpace={!!project.owner} />
       )}
     </>
   )

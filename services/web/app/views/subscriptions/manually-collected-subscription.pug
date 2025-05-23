@@ -1,0 +1,10 @@
+extends ../layout-marketing
+
+block entrypointVar
+	- entrypoint = 'pages/user/subscription/group-management/manually-collected-subscription'
+
+block append meta
+	meta(name="ol-groupName", data-type="string", content=groupName)
+
+block content
+	main.content.content-alt#manually-collected-subscription-root

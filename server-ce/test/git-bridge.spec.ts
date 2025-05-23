@@ -1,6 +1,13 @@
-import { startWith } from './helpers/config'
+import { v4 as uuid } from 'uuid'
+import { isExcludedBySharding, startWith } from './helpers/config'
 import { ensureUserExists, login } from './helpers/login'
-import { createProject } from './helpers/project'
+import {
+  createProject,
+  enableLinkSharing,
+  openProjectByName,
+  openProjectViaLinkSharingAsUser,
+  shareProjectByEmailAndAcceptInviteViaDash,
+} from './helpers/project'
 
 import git from 'isomorphic-git'
 import http from 'isomorphic-git/http/web'
@@ -15,7 +22,15 @@ describe('git-bridge', function () {
     V1_HISTORY_URL: 'http://sharelatex:3100/api',
   }
 
+  function gitURL(projectId: string) {
+    const url = new URL(Cypress.config().baseUrl!)
+    url.username = 'git'
+    url.pathname = `/git/${projectId}`
+    return url
+  }
+
   describe('enabled in Server Pro', function () {
+    if (isExcludedBySharding('PRO_CUSTOM_1')) return
     startWith({
       pro: true,
       vars: ENABLED_VARS,
@@ -28,9 +43,10 @@ describe('git-bridge', function () {
         cy.findByText('Delete token').click()
       })
     }
+
     function maybeClearAllTokens() {
       cy.visit('/user/settings')
-      cy.findByText('Git Integration')
+      cy.findByText('Git integration')
       cy.get('button')
         .contains(/Generate token|Add another token/)
         .then(btn => {
@@ -42,12 +58,12 @@ describe('git-bridge', function () {
 
     beforeEach(function () {
       login('user@example.com')
-      maybeClearAllTokens()
     })
 
     it('should render the git-bridge UI in the settings', () => {
+      maybeClearAllTokens()
       cy.visit('/user/settings')
-      cy.findByText('Git Integration')
+      cy.findByText('Git integration')
       cy.get('button').contains('Generate token').click()
       cy.get('code')
         .contains(/olp_[a-zA-Z0-9]{16}/)
@@ -67,17 +83,17 @@ describe('git-bridge', function () {
     })
 
     it('should render the git-bridge UI in the editor', function () {
-      cy.visit('/project')
+      maybeClearAllTokens()
       createProject('git').as('projectId')
       cy.get('header').findByText('Menu').click()
       cy.findByText('Sync')
       cy.findByText('Git').click()
-      cy.findByRole('dialog').within(() => {
+      cy.findByTestId('git-bridge-modal').within(() => {
         cy.get('@projectId').then(id => {
-          cy.get('code').contains(`git clone http://git@sharelatex/git/${id}`)
+          cy.get('code').contains(`git clone ${gitURL(id.toString())}`)
         })
         cy.findByRole('button', {
-          name: 'Generate token',
+          name: /generate token/i,
         }).click()
         cy.get('code').contains(/olp_[a-zA-Z0-9]{16}/)
       })
@@ -86,34 +102,101 @@ describe('git-bridge', function () {
       cy.url().then(url => cy.visit(url))
       cy.get('header').findByText('Menu').click()
       cy.findByText('Git').click()
-      cy.findByRole('dialog').within(() => {
+      cy.findByTestId('git-bridge-modal').within(() => {
         cy.get('@projectId').then(id => {
-          cy.get('code').contains(`git clone http://git@sharelatex/git/${id}`)
+          cy.get('code').contains(`git clone ${gitURL(id.toString())}`)
         })
         cy.findByText('Generate token').should('not.exist')
-        cy.findByText(/generate a new one in Account Settings/)
+        cy.findByText(/generate a new one in Account settings/i)
         cy.findByText('Go to settings')
           .should('have.attr', 'target', '_blank')
           .and('have.attr', 'href', '/user/settings')
       })
     })
 
-    it('should expose interface for git', () => {
-      cy.visit('/project')
-      createProject('git').as('projectId')
+    describe('git access', () => {
+      ensureUserExists({ email: 'collaborator-rw@example.com' })
+      ensureUserExists({ email: 'collaborator-ro@example.com' })
+      ensureUserExists({ email: 'collaborator-link-rw@example.com' })
+      ensureUserExists({ email: 'collaborator-link-ro@example.com' })
+
+      let projectName: string
+      beforeEach(() => {
+        projectName = uuid()
+        createProject(projectName, { open: false }).as('projectId')
+      })
+
+      it('should expose r/w interface to owner', () => {
+        maybeClearAllTokens()
+        openProjectByName(projectName)
+        checkGitAccess('readAndWrite')
+      })
+
+      it('should expose r/w interface to invited r/w collaborator', () => {
+        shareProjectByEmailAndAcceptInviteViaDash(
+          projectName,
+          'collaborator-rw@example.com',
+          'Editor'
+        )
+        maybeClearAllTokens()
+        openProjectByName(projectName)
+        checkGitAccess('readAndWrite')
+      })
+
+      it('should expose r/o interface to invited r/o collaborator', () => {
+        shareProjectByEmailAndAcceptInviteViaDash(
+          projectName,
+          'collaborator-ro@example.com',
+          'Viewer'
+        )
+        maybeClearAllTokens()
+        openProjectByName(projectName)
+        checkGitAccess('readOnly')
+      })
+
+      it('should expose r/w interface to link-sharing r/w collaborator', () => {
+        openProjectByName(projectName)
+        enableLinkSharing().then(({ linkSharingReadAndWrite }) => {
+          const email = 'collaborator-link-rw@example.com'
+          login(email)
+          maybeClearAllTokens()
+          openProjectViaLinkSharingAsUser(
+            linkSharingReadAndWrite,
+            projectName,
+            email
+          )
+          checkGitAccess('readAndWrite')
+        })
+      })
+
+      it('should expose r/o interface to link-sharing r/o collaborator', () => {
+        openProjectByName(projectName)
+        enableLinkSharing().then(({ linkSharingReadOnly }) => {
+          const email = 'collaborator-link-ro@example.com'
+          login(email)
+          maybeClearAllTokens()
+          openProjectViaLinkSharingAsUser(
+            linkSharingReadOnly,
+            projectName,
+            email
+          )
+          checkGitAccess('readOnly')
+        })
+      })
+    })
+
+    function checkGitAccess(access: 'readOnly' | 'readAndWrite') {
       const recompile = throttledRecompile()
 
       cy.get('header').findByText('Menu').click()
       cy.findByText('Sync')
       cy.findByText('Git').click()
       cy.get('@projectId').then(projectId => {
-        cy.findByRole('dialog').within(() => {
-          cy.get('code').contains(
-            `git clone http://git@sharelatex/git/${projectId}`
-          )
+        cy.findByTestId('git-bridge-modal').within(() => {
+          cy.get('code').contains(`git clone ${gitURL(projectId.toString())}`)
         })
         cy.findByRole('button', {
-          name: 'Generate token',
+          name: /generate token/i,
         }).click()
         cy.get('code')
           .contains(/olp_[a-zA-Z0-9]{16}/)
@@ -123,24 +206,20 @@ describe('git-bridge', function () {
             // close Git modal
             cy.findAllByText('Close').last().click()
             // close editor menu
-            cy.get('#left-menu-modal').click()
-
-            // check history
-            cy.findAllByText('History').last().click()
-            cy.findByText('(via Git)').should('not.exist')
-            cy.findAllByText('Back to editor').last().click()
+            cy.get('.left-menu-modal-backdrop').click()
 
             const fs = new LightningFS('fs')
             const dir = `/${projectId}`
 
-            async function readFile(path: string) {
+            async function readFile(path: string): Promise<string> {
               return new Promise((resolve, reject) => {
                 fs.readFile(path, { encoding: 'utf8' }, (err, blob) => {
                   if (err) return reject(err)
-                  resolve(blob)
+                  resolve(blob as string)
                 })
               })
             }
+
             async function writeFile(path: string, data: string) {
               return new Promise<void>((resolve, reject) => {
                 fs.writeFile(path, data, undefined, err => {
@@ -154,9 +233,11 @@ describe('git-bridge', function () {
               dir,
               fs,
             }
+            const url = gitURL(projectId.toString())
+            url.username = '' // basic auth is specified separately.
             const httpOptions = {
               http,
-              url: `http://sharelatex/git/${projectId}`,
+              url: url.toString(),
               headers: {
                 Authorization: `Basic ${Buffer.from(`git:${token}`).toString('base64')}`,
               },
@@ -165,6 +246,7 @@ describe('git-bridge', function () {
               author: { name: 'user', email: 'user@example.com' },
               committer: { name: 'user', email: 'user@example.com' },
             }
+            const mainTex = `${dir}/main.tex`
 
             // Clone
             cy.then({ timeout: 10_000 }, async () => {
@@ -174,7 +256,14 @@ describe('git-bridge', function () {
               })
             })
 
-            const mainTex = `${dir}/main.tex`
+            cy.findByText(/\\documentclass/)
+              .parent()
+              .parent()
+              .then(async editor => {
+                const onDisk = await readFile(mainTex)
+                expect(onDisk.replaceAll('\n', '')).to.equal(editor.text())
+              })
+
             const text = `
 \\documentclass{article}
 \\begin{document}
@@ -194,11 +283,36 @@ Hello world
                 ...authorOptions,
                 message: 'Swap main.tex',
               })
-              await git.push({
-                ...commonOptions,
-                ...httpOptions,
-              })
             })
+
+            if (access === 'readAndWrite') {
+              // check history before push
+              cy.findAllByText('History').last().click()
+              cy.findByText('(via Git)').should('not.exist')
+              cy.findAllByText('Back to editor').last().click()
+
+              cy.then(async () => {
+                await git.push({
+                  ...commonOptions,
+                  ...httpOptions,
+                })
+              })
+            } else {
+              cy.then(async () => {
+                try {
+                  await git.push({
+                    ...commonOptions,
+                    ...httpOptions,
+                  })
+                  expect.fail('push should have failed')
+                } catch (err) {
+                  expect(err).to.match(/branches were not updated/)
+                  expect(err).to.match(/forbidden/)
+                }
+              })
+
+              return // return early, below are write access bits
+            }
 
             // check push in editor
             cy.findByText(/\\documentclass/)
@@ -242,7 +356,7 @@ Hello world
             })
           })
       })
-    })
+    }
   })
 
   function checkDisabled() {
@@ -251,11 +365,10 @@ Hello world
     it('should not render the git-bridge UI in the settings', () => {
       login('user@example.com')
       cy.visit('/user/settings')
-      cy.findByText('Git Integration').should('not.exist')
+      cy.findByText('Git integration').should('not.exist')
     })
     it('should not render the git-bridge UI in the editor', function () {
       login('user@example.com')
-      cy.visit('/project')
       createProject('maybe git')
       cy.get('header').findByText('Menu').click()
       cy.findByText('Word Count') // wait for lazy loading
@@ -265,6 +378,7 @@ Hello world
   }
 
   describe('disabled in Server Pro', () => {
+    if (isExcludedBySharding('PRO_DEFAULT_1')) return
     startWith({
       pro: true,
     })
@@ -272,6 +386,7 @@ Hello world
   })
 
   describe('unavailable in CE', () => {
+    if (isExcludedBySharding('CE_CUSTOM_1')) return
     startWith({
       pro: false,
       vars: ENABLED_VARS,

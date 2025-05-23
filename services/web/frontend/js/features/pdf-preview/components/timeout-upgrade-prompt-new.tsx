@@ -4,9 +4,9 @@ import StartFreeTrialButton from '../../../shared/components/start-free-trial-bu
 import { memo, useCallback } from 'react'
 import PdfLogEntry from './pdf-log-entry'
 import { useStopOnFirstError } from '../../../shared/hooks/use-stop-on-first-error'
-import { Button } from 'react-bootstrap'
+import OLButton from '@/features/ui/components/ol/ol-button'
 import * as eventTracking from '../../../infrastructure/event-tracking'
-import { useFeatureFlag } from '@/shared/context/split-test-context'
+import getMeta from '@/utils/meta'
 
 function TimeoutUpgradePromptNew() {
   const {
@@ -29,7 +29,7 @@ function TimeoutUpgradePromptNew() {
   return (
     <>
       <CompileTimeout isProjectOwner={isProjectOwner} />
-      {window.ExposedSettings.enableSubscriptions && (
+      {getMeta('ol-ExposedSettings').enableSubscriptions && (
         <PreventTimeoutHelpMessage
           handleEnableStopOnFirstErrorClick={handleEnableStopOnFirstErrorClick}
           lastCompileOptions={lastCompileOptions}
@@ -49,13 +49,11 @@ const CompileTimeout = memo(function CompileTimeout({
 }: CompileTimeoutProps) {
   const { t } = useTranslation()
 
-  const hasNewPaywallCta = useFeatureFlag('paywall-cta')
-
   return (
     <PdfLogEntry
       headerTitle={t('your_compile_timed_out')}
       formattedContent={
-        window.ExposedSettings.enableSubscriptions && (
+        getMeta('ol-ExposedSettings').enableSubscriptions && (
           <>
             <p>
               {isProjectOwner
@@ -83,15 +81,9 @@ const CompileTimeout = memo(function CompileTimeout({
               <p className="text-center">
                 <StartFreeTrialButton
                   source="compile-timeout"
-                  buttonProps={{
-                    bsStyle: 'success',
-                    className: 'row-spaced-small',
-                    block: true,
-                  }}
+                  buttonProps={{ variant: 'primary', className: 'w-100' }}
                 >
-                  {hasNewPaywallCta
-                    ? t('get_more_compile_time')
-                    : t('start_a_free_trial')}
+                  {t('start_a_free_trial')}
                 </StartFreeTrialButton>
               </p>
             )}
@@ -175,9 +167,10 @@ const PreventTimeoutHelpMessage = memo(function PreventTimeoutHelpMessage({
                     i18nKey="enable_stop_on_first_error_under_recompile_dropdown_menu"
                     components={[
                       // eslint-disable-next-line react/jsx-key
-                      <Button
-                        bsSize="xs"
-                        bsStyle="info-ghost-inline"
+                      <OLButton
+                        variant="link"
+                        className="btn-inline-link fw-bold"
+                        size="sm"
                         onClick={handleEnableStopOnFirstErrorClick}
                       />,
                       // eslint-disable-next-line react/jsx-key
